@@ -84,8 +84,10 @@ class ZoneEditorTVC: UITableViewController {
 			design.addZone(zone, localBandwidthMbps: bandwidth, localLatencyMS: latency)
 		}
 
-		onSave?()
-		dismiss(animated: true)
+		let callback = onSave
+		dismiss(animated: true) {
+			callback?()
+		}
 	}
 
 	private func showAlert(_ message: String) {

@@ -60,7 +60,9 @@ class ServiceDefPickerTVC: UITableViewController {
 				design.addServiceDef(serviceDef)
 			}
 		}
-		onSave?()
-		dismiss(animated: true)
+		let callback = onSave
+		dismiss(animated: true) {
+			callback?()
+		}
 	}
 }

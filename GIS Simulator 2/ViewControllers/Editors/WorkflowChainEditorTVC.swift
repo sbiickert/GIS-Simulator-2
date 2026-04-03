@@ -84,7 +84,9 @@ class WorkflowChainEditorTVC: UITableViewController {
 	}
 
 	@objc func doneTapped() {
-		onSave?()
-		dismiss(animated: true)
+		let callback = onSave
+		dismiss(animated: true) {
+			callback?()
+		}
 	}
 }

@@ -118,8 +118,10 @@ class ConnectionEditorTVC: UITableViewController {
 			design.addConnection(conn, addReciprocal: reciprocal)
 		}
 
-		onSave?()
-		dismiss(animated: true)
+		let callback = onSave
+		dismiss(animated: true) {
+			callback?()
+		}
 	}
 
 	private func showAlert(_ message: String) {

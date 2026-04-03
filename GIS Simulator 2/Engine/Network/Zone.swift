@@ -87,8 +87,11 @@ public class Zone: Described, Codable {
 	}
 
 	public func isFullyConnected(in network:[Connection]) -> Bool {
-		return localConnection(in: network) != nil &&
-			entryConnections(in: network).count > 0 &&
+		guard localConnection(in: network) != nil else { return false }
+		let allZones = Zone.allZones(in: network)
+		// A single-zone network is fully connected if it has its self-connection
+		if allZones.count <= 1 { return true }
+		return entryConnections(in: network).count > 0 &&
 			exitConnections(in: network).count > 0
 	}
 	

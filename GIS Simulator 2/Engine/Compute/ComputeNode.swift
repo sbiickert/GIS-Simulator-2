@@ -142,7 +142,7 @@ public nonisolated class ComputeNode: Described, Hashable, ServiceTimeCalculator
 	public var vmCount: Int { return _vmList.count }
 	
 	public func vm(at index: Int) -> ComputeNode? {
-		if index < _vmList.count || index >= 0 {
+		if index >= 0 && index < _vmList.count {
 			return _vmList[index]
 		}
 		return nil

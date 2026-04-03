@@ -232,12 +232,10 @@ public class Library {
 			zones.append(contentsOf: [lan, dmz, internet, agol, cloud, cloudEdge])
 			connections.append(contentsOf: [lanLocal, dmzLocal, internetLocal, agolLocal, cloudLocal, cloudEdgeLocal])
 			connections.append(contentsOf: lan.connectBothWays(to: dmz, bandwidth: 500, latency: 1))
-			connections.append(lan.connect(to: dmz, bandwidth: 250, latency: 10))
-			connections.append(dmz.connect(to: lan, bandwidth: 500, latency: 10))
+			connections.append(contentsOf: dmz.connectBothWays(to: internet, bandwidth: 250, latency: 10))
 			connections.append(contentsOf: internet.connectBothWays(to: agol, bandwidth: 1000, latency: 1))
 			connections.append(contentsOf: cloud.connectBothWays(to: cloudEdge, bandwidth: 1000, latency: 0))
 			connections.append(contentsOf: cloudEdge.connectBothWays(to: internet, bandwidth: 1000, latency: 10))
-			connections.append(contentsOf: internet.connectBothWays(to: agol, bandwidth: 10000, latency: 1))
 			connections.append(contentsOf: lan.connectBothWays(to: cloud, bandwidth: 1000, latency: 5))
 		}
 		

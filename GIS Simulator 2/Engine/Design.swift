@@ -185,9 +185,7 @@ public class Design: Described, Validatable {
 	}
 	
 	public func removeServiceDef(_ def: ServiceDef) {
-		if services.keys.contains(def.serviceType) {
-			_ = services.remove(at: services.startIndex)
-		}
+		services.removeValue(forKey: def.serviceType)
 		
 		updateServiceProviders()
 		updateWorkflowDefinitions()

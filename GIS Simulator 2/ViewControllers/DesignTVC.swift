@@ -257,22 +257,29 @@ class DesignTVC: UITableViewController {
 	override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
 		guard let ds = DesignSection(rawValue: section), ds.canAdd else { return nil }
 
-		let header = UITableViewHeaderFooterView()
-		var content = UIListContentConfiguration.groupedHeader()
-		content.text = ds.title
-		header.contentConfiguration = content
+		let container = UIView()
+
+		let label = UILabel()
+		label.text = ds.title.uppercased()
+		label.font = .preferredFont(forTextStyle: .footnote)
+		label.textColor = .secondaryLabel
+		label.translatesAutoresizingMaskIntoConstraints = false
+		container.addSubview(label)
 
 		let addButton = UIButton(type: .contactAdd)
 		addButton.tag = section
 		addButton.addTarget(self, action: #selector(addButtonTapped(_:)), for: .touchUpInside)
 		addButton.translatesAutoresizingMaskIntoConstraints = false
-		header.contentView.addSubview(addButton)
+		container.addSubview(addButton)
+
 		NSLayoutConstraint.activate([
-			addButton.trailingAnchor.constraint(equalTo: header.contentView.trailingAnchor, constant: -16),
-			addButton.centerYAnchor.constraint(equalTo: header.contentView.centerYAnchor)
+			label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+			label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+			addButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+			addButton.centerYAnchor.constraint(equalTo: label.centerYAnchor)
 		])
 
-		return header
+		return container
 	}
 
 	// MARK: - Add Actions

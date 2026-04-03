@@ -66,7 +66,9 @@ class VMEditorTVC: UITableViewController {
 		} else {
 			_ = host.addVirtualMachine(name: vmName.isEmpty ? nil : vmName, vCores: vCores, memoryGB: memoryGB)
 		}
-		onSave?()
-		dismiss(animated: true)
+		let callback = onSave
+		dismiss(animated: true) {
+			callback?()
+		}
 	}
 }

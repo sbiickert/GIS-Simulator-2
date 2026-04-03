@@ -49,6 +49,10 @@ public class ServiceProvider: Described, Validatable, Hashable, Codable {
 		var container = encoder.container(keyedBy: CodingKeys.self)
 		try container.encode(name, forKey: .name)
 		try container.encode(desc, forKey: .desc)
+		try container.encode(service, forKey: .service)
+		try container.encode(tags, forKey: .tags)
+		try container.encode(nodes, forKey: .nodes)
+		try container.encode(_primary, forKey: .primary)
 	}
 
 	public var primary: Int {

@@ -149,7 +149,7 @@ public class Simulator: Described {
 		var requests: [ClientRequest] = []
 		var nextTime = 0
 		
-		if let nextW, (nextQ == nil || nextW.1 < nextQ!.1) {
+		if let nextW, (nextQ == nil || nextW.1 <= nextQ!.1) {
 			nextTime = nextW.1
 			let transaction = nextW.0.createClientRequests(network: design.network, clock: nextTime)
 			requests = transaction.1

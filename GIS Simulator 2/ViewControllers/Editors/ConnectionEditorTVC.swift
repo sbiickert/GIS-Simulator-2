@@ -10,7 +10,6 @@ import UIKit
 class ConnectionEditorTVC: UITableViewController {
 	var design: Design!
 	var editingConnection: Connection?
-	var onSave: (() -> Void)?
 
 	private var sourceIndex = 0
 	private var destIndex = 0
@@ -18,11 +17,10 @@ class ConnectionEditorTVC: UITableViewController {
 	private var latency = 0
 	private var reciprocal = true
 
-	convenience init(design: Design, editing conn: Connection? = nil, onSave: (() -> Void)? = nil) {
+	convenience init(design: Design, editing conn: Connection? = nil) {
 		self.init(style: .grouped)
 		self.design = design
 		self.editingConnection = conn
-		self.onSave = onSave
 
 		if let conn {
 			sourceIndex = design.zones.firstIndex(of: conn.source) ?? 0
@@ -35,7 +33,6 @@ class ConnectionEditorTVC: UITableViewController {
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		title = editingConnection != nil ? "Edit Connection" : "New Connection"
-		navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
 		navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .save, target: self, action: #selector(saveTapped))
 		tableView.register(TextFieldCell.self, forCellReuseIdentifier: TextFieldCell.reuseIdentifier)
 		tableView.register(PickerCell.self, forCellReuseIdentifier: PickerCell.reuseIdentifier)
@@ -95,8 +92,6 @@ class ConnectionEditorTVC: UITableViewController {
 
 	// MARK: - Actions
 
-	@objc func cancelTapped() { dismiss(animated: true) }
-
 	@objc func saveTapped() {
 		guard !design.zones.isEmpty else {
 			showAlert("Add zones before creating connections.")
@@ -118,10 +113,7 @@ class ConnectionEditorTVC: UITableViewController {
 			design.addConnection(conn, addReciprocal: reciprocal)
 		}
 
-		let callback = onSave
-		dismiss(animated: true) {
-			callback?()
-		}
+		navigationController?.popViewController(animated: true)
 	}
 
 	private func showAlert(_ message: String) {

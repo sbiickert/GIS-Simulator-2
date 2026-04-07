@@ -10,7 +10,6 @@ import UIKit
 class WorkflowEditorTVC: UITableViewController {
 	var design: Design!
 	var editingWorkflow: Workflow?
-	var onSave: (() -> Void)?
 
 	private var wfName = ""
 	private var wfDesc = ""
@@ -20,11 +19,10 @@ class WorkflowEditorTVC: UITableViewController {
 	private var productivity = 100
 	private var tph = 100
 
-	convenience init(design: Design, editing workflow: Workflow? = nil, onSave: (() -> Void)? = nil) {
+	convenience init(design: Design, editing workflow: Workflow? = nil) {
 		self.init(style: .grouped)
 		self.design = design
 		self.editingWorkflow = workflow
-		self.onSave = onSave
 
 		if let workflow {
 			wfName = workflow.name
@@ -40,7 +38,6 @@ class WorkflowEditorTVC: UITableViewController {
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		title = editingWorkflow != nil ? "Edit Workflow" : "New Workflow"
-		navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
 		navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .save, target: self, action: #selector(saveTapped))
 		tableView.register(TextFieldCell.self, forCellReuseIdentifier: TextFieldCell.reuseIdentifier)
 		tableView.register(PickerCell.self, forCellReuseIdentifier: PickerCell.reuseIdentifier)
@@ -122,8 +119,6 @@ class WorkflowEditorTVC: UITableViewController {
 
 	// MARK: - Actions
 
-	@objc func cancelTapped() { dismiss(animated: true) }
-
 	@objc func saveTapped() {
 		guard !wfName.isEmpty else {
 			showAlert("Workflow name is required.")
@@ -151,10 +146,7 @@ class WorkflowEditorTVC: UITableViewController {
 			}
 		}
 
-		let callback = onSave
-		dismiss(animated: true) {
-			callback?()
-		}
+		navigationController?.popViewController(animated: true)
 	}
 
 	private func showAlert(_ message: String) {

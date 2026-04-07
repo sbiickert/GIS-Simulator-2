@@ -289,28 +289,26 @@ class DesignTVC: UITableViewController {
 
 		switch ds {
 		case .zones:
-			presentEditor(ZoneEditorTVC(design: design, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(ZoneEditorTVC(design: design))
 		case .network:
-			presentEditor(ConnectionEditorTVC(design: design, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(ConnectionEditorTVC(design: design))
 		case .compute:
-			presentEditor(ComputeNodeEditorTVC(design: design, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(ComputeNodeEditorTVC(design: design))
 		case .services:
-			presentEditor(ServiceDefPickerTVC(design: design, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(ServiceDefPickerTVC(design: design))
 		case .serviceProviders:
-			presentEditor(ServiceProviderEditorTVC(design: design, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(ServiceProviderEditorTVC(design: design))
 		case .workflowDefs:
-			presentEditor(WorkflowDefPickerTVC(design: design, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(WorkflowDefPickerTVC(design: design))
 		case .workflows:
-			presentEditor(WorkflowEditorTVC(design: design, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(WorkflowEditorTVC(design: design))
 		default:
 			break
 		}
 	}
 
-	private func presentEditor(_ editor: UITableViewController) {
-		let nav = UINavigationController(rootViewController: editor)
-		nav.modalPresentationStyle = .formSheet
-		present(nav, animated: true)
+	private func pushEditor(_ editor: UITableViewController) {
+		navigationController?.pushViewController(editor, animated: true)
 	}
 
 	// MARK: - Row Selection (Edit)
@@ -322,22 +320,22 @@ class DesignTVC: UITableViewController {
 		switch ds {
 		case .zones:
 			let zone = design.zones[indexPath.row]
-			presentEditor(ZoneEditorTVC(design: design, editing: zone, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(ZoneEditorTVC(design: design, editing: zone))
 		case .network:
 			let conn = design.network[indexPath.row]
-			presentEditor(ConnectionEditorTVC(design: design, editing: conn, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(ConnectionEditorTVC(design: design, editing: conn))
 		case .compute:
 			let node = design.physicalComputeNodes[indexPath.row]
-			presentEditor(ComputeNodeEditorTVC(design: design, editing: node, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(ComputeNodeEditorTVC(design: design, editing: node))
 		case .serviceProviders:
 			let sp = design.serviceProviders[indexPath.row]
-			presentEditor(ServiceProviderEditorTVC(design: design, editing: sp, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(ServiceProviderEditorTVC(design: design, editing: sp))
 		case .workflowDefs:
 			let wfDef = design.workflowDefinitions[indexPath.row]
-			presentEditor(WorkflowChainEditorTVC(design: design, workflowDef: wfDef, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(WorkflowChainEditorTVC(design: design, workflowDef: wfDef))
 		case .workflows:
 			let wf = design.allWorkflows[indexPath.row]
-			presentEditor(WorkflowEditorTVC(design: design, editing: wf, onSave: { [weak self] in self?.tableView.reloadData() }))
+			pushEditor(WorkflowEditorTVC(design: design, editing: wf))
 		default:
 			break
 		}

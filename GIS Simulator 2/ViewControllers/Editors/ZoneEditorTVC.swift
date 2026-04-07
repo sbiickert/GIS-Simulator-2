@@ -10,18 +10,16 @@ import UIKit
 class ZoneEditorTVC: UITableViewController {
 	var design: Design!
 	var editingZone: Zone?
-	var onSave: (() -> Void)?
 
 	private var zoneName = ""
 	private var zoneDesc = ""
 	private var bandwidth = 1000
 	private var latency = 0
 
-	convenience init(design: Design, editing zone: Zone? = nil, onSave: (() -> Void)? = nil) {
+	convenience init(design: Design, editing zone: Zone? = nil) {
 		self.init(style: .grouped)
 		self.design = design
 		self.editingZone = zone
-		self.onSave = onSave
 
 		if let zone {
 			zoneName = zone.name
@@ -36,7 +34,6 @@ class ZoneEditorTVC: UITableViewController {
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		title = editingZone != nil ? "Edit Zone" : "New Zone"
-		navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
 		navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .save, target: self, action: #selector(saveTapped))
 		tableView.register(TextFieldCell.self, forCellReuseIdentifier: TextFieldCell.reuseIdentifier)
 	}
@@ -68,8 +65,6 @@ class ZoneEditorTVC: UITableViewController {
 
 	// MARK: - Actions
 
-	@objc func cancelTapped() { dismiss(animated: true) }
-
 	@objc func saveTapped() {
 		guard !zoneName.isEmpty else {
 			showAlert("Zone name is required.")
@@ -84,10 +79,7 @@ class ZoneEditorTVC: UITableViewController {
 			design.addZone(zone, localBandwidthMbps: bandwidth, localLatencyMS: latency)
 		}
 
-		let callback = onSave
-		dismiss(animated: true) {
-			callback?()
-		}
+		navigationController?.popViewController(animated: true)
 	}
 
 	private func showAlert(_ message: String) {

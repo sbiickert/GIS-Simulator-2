@@ -10,17 +10,15 @@ import UIKit
 class VMEditorTVC: UITableViewController {
 	var host: ComputeNode!
 	var editingVM: ComputeNode?
-	var onSave: (() -> Void)?
 
 	private var vmName = ""
 	private var vCores = 4
 	private var memoryGB = 16
 
-	convenience init(host: ComputeNode, editing vm: ComputeNode? = nil, onSave: (() -> Void)? = nil) {
+	convenience init(host: ComputeNode, editing vm: ComputeNode? = nil) {
 		self.init(style: .grouped)
 		self.host = host
 		self.editingVM = vm
-		self.onSave = onSave
 
 		if let vm {
 			vmName = vm.name
@@ -32,7 +30,6 @@ class VMEditorTVC: UITableViewController {
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		title = editingVM != nil ? "Edit VM" : "New VM"
-		navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
 		navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .save, target: self, action: #selector(saveTapped))
 		tableView.register(TextFieldCell.self, forCellReuseIdentifier: TextFieldCell.reuseIdentifier)
 	}
@@ -57,8 +54,6 @@ class VMEditorTVC: UITableViewController {
 		return cell
 	}
 
-	@objc func cancelTapped() { dismiss(animated: true) }
-
 	@objc func saveTapped() {
 		if let vm = editingVM {
 			vm.name = vmName
@@ -66,9 +61,6 @@ class VMEditorTVC: UITableViewController {
 		} else {
 			_ = host.addVirtualMachine(name: vmName.isEmpty ? nil : vmName, vCores: vCores, memoryGB: memoryGB)
 		}
-		let callback = onSave
-		dismiss(animated: true) {
-			callback?()
-		}
+		navigationController?.popViewController(animated: true)
 	}
 }

@@ -10,7 +10,6 @@ import UIKit
 class ComputeNodeEditorTVC: UITableViewController {
 	var design: Design!
 	var editingNode: ComputeNode?
-	var onSave: (() -> Void)?
 
 	private let library = Library()
 	private var nodeName = ""
@@ -27,11 +26,10 @@ class ComputeNodeEditorTVC: UITableViewController {
 		case vms
 	}
 
-	convenience init(design: Design, editing node: ComputeNode? = nil, onSave: (() -> Void)? = nil) {
+	convenience init(design: Design, editing node: ComputeNode? = nil) {
 		self.init(style: .grouped)
 		self.design = design
 		self.editingNode = node
-		self.onSave = onSave
 
 		sortedHardware = library.hardwareDefinitions.sorted(by: { $0.key < $1.key })
 
@@ -48,11 +46,15 @@ class ComputeNodeEditorTVC: UITableViewController {
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		title = editingNode != nil ? "Edit Compute Node" : "New Compute Node"
-		navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
 		navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .save, target: self, action: #selector(saveTapped))
 		tableView.register(TextFieldCell.self, forCellReuseIdentifier: TextFieldCell.reuseIdentifier)
 		tableView.register(PickerCell.self, forCellReuseIdentifier: PickerCell.reuseIdentifier)
 		tableView.register(UITableViewCell.self, forCellReuseIdentifier: "VMCell")
+	}
+
+	override func viewWillAppear(_ animated: Bool) {
+		super.viewWillAppear(animated)
+		tableView.reloadData()
 	}
 
 	// MARK: - Table View
@@ -77,20 +79,27 @@ class ComputeNodeEditorTVC: UITableViewController {
 	override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
 		guard section == Section.vms.rawValue else { return nil }
 
-		let header = UITableViewHeaderFooterView()
-		var content = UIListContentConfiguration.groupedHeader()
-		content.text = "Virtual Machines"
-		header.contentConfiguration = content
+		let container = UIView()
+
+		let label = UILabel()
+		label.text = "Virtual Machines"
+		label.font = .preferredFont(forTextStyle: .footnote)
+		label.textColor = .secondaryLabel
+		label.translatesAutoresizingMaskIntoConstraints = false
+		container.addSubview(label)
 
 		let addButton = UIButton(type: .contactAdd)
 		addButton.addTarget(self, action: #selector(addVM), for: .touchUpInside)
 		addButton.translatesAutoresizingMaskIntoConstraints = false
-		header.contentView.addSubview(addButton)
+		container.addSubview(addButton)
+
 		NSLayoutConstraint.activate([
-			addButton.trailingAnchor.constraint(equalTo: header.contentView.trailingAnchor, constant: -16),
-			addButton.centerYAnchor.constraint(equalTo: header.contentView.centerYAnchor)
+			label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+			label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+			addButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+			addButton.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -2)
 		])
-		return header
+		return container
 	}
 
 	override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -165,22 +174,14 @@ class ComputeNodeEditorTVC: UITableViewController {
 		tableView.deselectRow(at: indexPath, animated: true)
 		guard indexPath.section == Section.vms.rawValue, let node = editingNode, let vm = node.vm(at: indexPath.row) else { return }
 
-		let editor = VMEditorTVC(host: node, editing: vm) { [weak self] in
-			self?.tableView.reloadData()
-		}
-		let nav = UINavigationController(rootViewController: editor)
-		nav.modalPresentationStyle = .formSheet
-		present(nav, animated: true)
+		let editor = VMEditorTVC(host: node, editing: vm)
+		navigationController?.pushViewController(editor, animated: true)
 	}
 
 	@objc func addVM() {
 		guard let node = editingNode else { return }
-		let editor = VMEditorTVC(host: node) { [weak self] in
-			self?.tableView.reloadData()
-		}
-		let nav = UINavigationController(rootViewController: editor)
-		nav.modalPresentationStyle = .formSheet
-		present(nav, animated: true)
+		let editor = VMEditorTVC(host: node)
+		navigationController?.pushViewController(editor, animated: true)
 	}
 
 	override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
@@ -196,8 +197,6 @@ class ComputeNodeEditorTVC: UITableViewController {
 	}
 
 	// MARK: - Actions
-
-	@objc func cancelTapped() { dismiss(animated: true) }
 
 	@objc func saveTapped() {
 		guard !nodeName.isEmpty else {
@@ -227,10 +226,7 @@ class ComputeNodeEditorTVC: UITableViewController {
 			design.addCompute(node)
 		}
 
-		let callback = onSave
-		dismiss(animated: true) {
-			callback?()
-		}
+		navigationController?.popViewController(animated: true)
 	}
 
 	private func showAlert(_ message: String) {

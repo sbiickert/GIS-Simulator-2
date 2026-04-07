@@ -10,7 +10,6 @@ import UIKit
 class ServiceProviderEditorTVC: UITableViewController {
 	var design: Design!
 	var editingSP: ServiceProvider?
-	var onSave: (() -> Void)?
 
 	private var spName = ""
 	private var spDesc = ""
@@ -27,11 +26,10 @@ class ServiceProviderEditorTVC: UITableViewController {
 		case nodes
 	}
 
-	convenience init(design: Design, editing sp: ServiceProvider? = nil, onSave: (() -> Void)? = nil) {
+	convenience init(design: Design, editing sp: ServiceProvider? = nil) {
 		self.init(style: .grouped)
 		self.design = design
 		self.editingSP = sp
-		self.onSave = onSave
 
 		sortedServices = design.services.values.sorted(by: { $0.serviceType < $1.serviceType })
 
@@ -53,7 +51,6 @@ class ServiceProviderEditorTVC: UITableViewController {
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		title = editingSP != nil ? "Edit Service Provider" : "New Service Provider"
-		navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
 		navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .save, target: self, action: #selector(saveTapped))
 		tableView.register(TextFieldCell.self, forCellReuseIdentifier: TextFieldCell.reuseIdentifier)
 		tableView.register(PickerCell.self, forCellReuseIdentifier: PickerCell.reuseIdentifier)
@@ -128,8 +125,6 @@ class ServiceProviderEditorTVC: UITableViewController {
 
 	// MARK: - Actions
 
-	@objc func cancelTapped() { dismiss(animated: true) }
-
 	@objc func saveTapped() {
 		guard !spName.isEmpty else {
 			showAlert("Provider name is required.")
@@ -157,10 +152,7 @@ class ServiceProviderEditorTVC: UITableViewController {
 			design.addServiceProvider(sp)
 		}
 
-		let callback = onSave
-		dismiss(animated: true) {
-			callback?()
-		}
+		navigationController?.popViewController(animated: true)
 	}
 
 	private func showAlert(_ message: String) {

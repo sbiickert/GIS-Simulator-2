@@ -9,21 +9,18 @@ import UIKit
 
 class WorkflowDefPickerTVC: UITableViewController {
 	var design: Design!
-	var onSave: (() -> Void)?
 
 	private let library = Library()
 	private var availableDefs: [(String, WorkflowDef)] = []
 
-	convenience init(design: Design, onSave: (() -> Void)? = nil) {
+	convenience init(design: Design) {
 		self.init(style: .grouped)
 		self.design = design
-		self.onSave = onSave
 	}
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		title = "Add Workflow Definition"
-		navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
 		navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
 		tableView.register(UITableViewCell.self, forCellReuseIdentifier: "WFDefCell")
 		tableView.allowsMultipleSelection = true
@@ -52,8 +49,6 @@ class WorkflowDefPickerTVC: UITableViewController {
 		return cell
 	}
 
-	@objc func cancelTapped() { dismiss(animated: true) }
-
 	@objc func doneTapped() {
 		if let selectedRows = tableView.indexPathsForSelectedRows {
 			for indexPath in selectedRows {
@@ -61,9 +56,6 @@ class WorkflowDefPickerTVC: UITableViewController {
 				design.addWorkflowDefinition(wfDef)
 			}
 		}
-		let callback = onSave
-		dismiss(animated: true) {
-			callback?()
-		}
+		navigationController?.popViewController(animated: true)
 	}
 }

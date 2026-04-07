@@ -10,19 +10,16 @@ import UIKit
 class WorkflowChainEditorTVC: UITableViewController {
 	var design: Design!
 	var workflowDef: WorkflowDef!
-	var onSave: (() -> Void)?
 
-	convenience init(design: Design, workflowDef: WorkflowDef, onSave: (() -> Void)? = nil) {
+	convenience init(design: Design, workflowDef: WorkflowDef) {
 		self.init(style: .grouped)
 		self.design = design
 		self.workflowDef = workflowDef
-		self.onSave = onSave
 	}
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		title = workflowDef.name
-		navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
 		tableView.register(PickerCell.self, forCellReuseIdentifier: PickerCell.reuseIdentifier)
 		tableView.register(UITableViewCell.self, forCellReuseIdentifier: "StepCell")
 	}
@@ -70,8 +67,7 @@ class WorkflowChainEditorTVC: UITableViewController {
 			options: providerNames,
 			selectedIndex: selectedIndex
 		)
-		cell.onSelected = { [weak self] i in
-			guard let self else { return }
+		cell.onSelected = { i in
 			if i == 0 {
 				chain.serviceProviders.removeValue(forKey: serviceType)
 			} else {
@@ -81,12 +77,5 @@ class WorkflowChainEditorTVC: UITableViewController {
 		}
 
 		return cell
-	}
-
-	@objc func doneTapped() {
-		let callback = onSave
-		dismiss(animated: true) {
-			callback?()
-		}
 	}
 }

@@ -27,6 +27,12 @@ struct ComputeNodeEditorView: View {
         library.hardwareDefinitions.sorted(by: { $0.key < $1.key })
     }
 
+    /// The hardware currently chosen in the picker (may differ from the saved
+    /// host until Save), used to keep the allocation stats live.
+    private var selectedHardware: HardwareDef? {
+        sortedHardware.indices.contains(hwIndex) ? sortedHardware[hwIndex].1 : nil
+    }
+
     private var canShowVMs: Bool {
         editing?.type == .host
     }
@@ -56,6 +62,12 @@ struct ComputeNodeEditorView: View {
             }
 
             if canShowVMs, let host = editing {
+                HostAllocationSection(
+                    host: host,
+                    cores: selectedHardware?.cores ?? host.hwDef.cores,
+                    totalMemory: memoryGB
+                )
+
                 Section {
                     ForEach(host.vmList, id: \.persistentModelID) { vm in
                         NavigationLink {
@@ -169,5 +181,73 @@ struct ComputeNodeEditorView: View {
         design.removeCompute(node)
         try? modelContext.save()
         dismiss()
+    }
+}
+
+/// Summarizes how much of a host's CPU and memory has been allocated to its VMs.
+/// Updates live as VMs are added or removed.
+private struct HostAllocationSection: View {
+    let host: ComputeNode
+    /// Physical core count of the hardware currently selected in the editor.
+    let cores: Int
+    /// Host memory (GB) currently selected in the editor.
+    let totalMemory: Int
+
+    /// Allocation above this fraction of capacity triggers a warning.
+    private let warningThreshold = 0.8
+
+    /// Schedulable vCPU capacity: physical cores scaled up by the host's
+    /// threading model (e.g. a 16-core hyperthreaded host offers 32 vCPUs).
+    private var totalCores: Int { Int(Double(cores) / host.threading.factor) }
+    private var allocatedVCPU: Int { host.totalVirtualCpuAllocation }
+    private var availableVCPU: Int { totalCores - allocatedVCPU }
+    private var cpuFraction: Double {
+        totalCores > 0 ? Double(allocatedVCPU) / Double(totalCores) : 0
+    }
+
+    private var allocatedMemory: Int { host.totalMemoryAllocation }
+    private var availableMemory: Int { totalMemory - allocatedMemory }
+    private var memoryFraction: Double {
+        totalMemory > 0 ? Double(allocatedMemory) / Double(totalMemory) : 0
+    }
+
+    var body: some View {
+        Section {
+            LabeledContent("vCPU") {
+                Text("\(allocatedVCPU) of \(totalCores) cores")
+            }
+            LabeledContent("vCPU Available") {
+                Text("\(availableVCPU)")
+                    .foregroundStyle(availableVCPU < 0 ? .red : .secondary)
+            }
+            LabeledContent("Memory") {
+                Text("\(allocatedMemory) of \(totalMemory) GB")
+            }
+            LabeledContent("Memory Available") {
+                Text("\(availableMemory) GB")
+                    .foregroundStyle(availableMemory < 0 ? .red : .secondary)
+            }
+
+            if cpuFraction > warningThreshold {
+                warningLabel(for: "vCPU", fraction: cpuFraction)
+            }
+            if memoryFraction > warningThreshold {
+                warningLabel(for: "Memory", fraction: memoryFraction)
+            }
+        } header: {
+            Text("Host Allocation")
+        }
+    }
+
+    @ViewBuilder
+    private func warningLabel(for resource: String, fraction: Double) -> some View {
+        let pct = Int((fraction * 100).rounded())
+        let overAllocated = fraction > 1.0
+        Label(
+            "\(resource) \(overAllocated ? "over-allocated" : "near capacity") (\(pct)%)",
+            systemImage: "exclamationmark.triangle.fill"
+        )
+        .font(.callout)
+        .foregroundStyle(overAllocated ? .red : .orange)
     }
 }

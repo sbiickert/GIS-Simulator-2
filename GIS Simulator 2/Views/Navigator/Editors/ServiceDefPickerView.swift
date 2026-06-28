@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ServiceDefPickerView: View {
     @Bindable var design: Design
@@ -12,6 +13,12 @@ struct ServiceDefPickerView: View {
     @Environment(\.library) private var library
 
     @State private var selected: Set<String> = []
+
+    /// The minimal set of service types present in every design.
+    private let minimalServiceTypes: Set<String> = [
+        "browser", "dbms", "feature", "file", "image", "map",
+        "mobile", "portal", "pro", "relational", "web"
+    ]
 
     private var availableServices: [(String, ServiceDef)] {
         let existing = Set(design.services.keys)
@@ -22,6 +29,11 @@ struct ServiceDefPickerView: View {
 
     var body: some View {
         List {
+            if !availableServices.isEmpty {
+                Section {
+                    Button("Select Minimal Set") { selectMinimalSet() }
+                }
+            }
             Section {
                 if availableServices.isEmpty {
                     Text("All service types have been added")
@@ -46,6 +58,7 @@ struct ServiceDefPickerView: View {
                                 }
                             }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             } header: {
@@ -58,6 +71,12 @@ struct ServiceDefPickerView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { commit() }
             }
+        }
+    }
+
+    private func selectMinimalSet() {
+        for (_, def) in availableServices where minimalServiceTypes.contains(def.serviceType) {
+            selected.insert(def.serviceType)
         }
     }
 
@@ -75,4 +94,46 @@ struct ServiceDefPickerView: View {
         }
         dismiss()
     }
+}
+
+// MARK: - Previews
+
+@MainActor
+private func previewContainer(addExistingServices: Bool) -> ModelContainer {
+    let container = try! ModelContainer(
+        for: Design.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    let design = Design(name: "Production Cluster", desc: "Primary GIS deployment")
+    container.mainContext.insert(design)
+    if addExistingServices {
+        let library = Library()
+        for type in ["map", "feature", "portal"] {
+            if let def = library.serviceDefinitions[type] {
+                design.addServiceDef(def)
+            }
+        }
+    }
+    try? container.mainContext.save()
+    return container
+}
+
+#Preview("All Available") {
+    let container = previewContainer(addExistingServices: false)
+    let design = try! container.mainContext.fetch(FetchDescriptor<Design>()).first!
+    return NavigationStack {
+        ServiceDefPickerView(design: design)
+    }
+    .environment(\.library, Library())
+    .modelContainer(container)
+}
+
+#Preview("Some Added") {
+    let container = previewContainer(addExistingServices: true)
+    let design = try! container.mainContext.fetch(FetchDescriptor<Design>()).first!
+    return NavigationStack {
+        ServiceDefPickerView(design: design)
+    }
+    .environment(\.library, Library())
+    .modelContainer(container)
 }

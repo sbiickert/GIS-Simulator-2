@@ -6,25 +6,53 @@
 import SwiftUI
 import SwiftData
 
+/// A pending delete confirmation, hoisted out of the list so swipe-to-delete
+/// row reconciliation cannot dismiss the dialog before the user responds.
+struct DeleteRequest: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String?
+    let perform: () -> Void
+}
+
 struct DesignDetailView: View {
     @Bindable var design: Design
     @Environment(AppFocus.self) private var focus
+    @State private var deleteRequest: DeleteRequest?
 
     var body: some View {
         Form {
             InfoSection(design: design)
-            ZonesSection(design: design)
-            NetworkSection(design: design)
-            ComputeSection(design: design)
-            ServicesSection(design: design)
-            ServiceProvidersSection(design: design)
-            WorkflowDefsSection(design: design)
-            WorkflowsSection(design: design)
+            ZonesSection(design: design, deleteRequest: $deleteRequest)
+            NetworkSection(design: design, deleteRequest: $deleteRequest)
+            ComputeSection(design: design, deleteRequest: $deleteRequest)
+            ServicesSection(design: design, deleteRequest: $deleteRequest)
+            ServiceProvidersSection(design: design, deleteRequest: $deleteRequest)
+            WorkflowDefsSection(design: design, deleteRequest: $deleteRequest)
+            WorkflowsSection(design: design, deleteRequest: $deleteRequest)
             ValidationSection(design: design)
         }
         .navigationTitle(design.name)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { focus.currentDesign = design }
+        // Attached to the Form (not a Section) so it survives the swipe-delete
+        // row animation and is not auto-dismissed by list reconciliation.
+        .confirmationDialog(
+            deleteRequest?.title ?? "",
+            isPresented: Binding(get: { deleteRequest != nil }, set: { if !$0 { deleteRequest = nil } }),
+            titleVisibility: .visible,
+            presenting: deleteRequest
+        ) { request in
+            Button("Delete", role: .destructive) {
+                request.perform()
+                deleteRequest = nil
+            }
+            Button("Cancel", role: .cancel) { deleteRequest = nil }
+        } message: { request in
+            if let message = request.message {
+                Text(message)
+            }
+        }
     }
 }
 
@@ -48,11 +76,12 @@ private struct InfoSection: View {
 
 private struct ZonesSection: View {
     @Bindable var design: Design
+    @Binding var deleteRequest: DeleteRequest?
     @Environment(\.modelContext) private var modelContext
-    @State private var pendingDelete: IndexSet?
+    @AppStorage("section.zones.expanded") private var isExpanded = true
 
     var body: some View {
-        Section {
+        Section(isExpanded: $isExpanded) {
             ForEach(design.zones, id: \.persistentModelID) { zone in
                 NavigationLink {
                     ZoneEditorView(design: design, editing: zone)
@@ -66,34 +95,21 @@ private struct ZonesSection: View {
                 }
                 .isDetailLink(false)
             }
-            .onDelete { pendingDelete = $0 }
+            .onDelete { offsets in
+                let targets = offsets.map { design.zones[$0] }
+                deleteRequest = DeleteRequest(
+                    title: "Delete \(targets.count) zone(s)?",
+                    message: "Network connections and compute nodes in these zones will also be removed."
+                ) {
+                    targets.forEach { design.removeZone($0) }
+                    try? modelContext.save()
+                }
+            }
         } header: {
-            SectionHeader(title: "Zones") {
+            SectionHeader(title: "Zones", isExpanded: $isExpanded, count: design.zones.count) {
                 ZoneEditorView(design: design)
             }
         }
-        .confirmationDialog(
-            "Delete \(pendingDelete?.count ?? 0) zone(s)?",
-            isPresented: deletionBinding,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) { confirmDelete() }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-        } message: {
-            Text("Network connections and compute nodes in these zones will also be removed.")
-        }
-    }
-
-    private var deletionBinding: Binding<Bool> {
-        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
-    }
-
-    private func confirmDelete() {
-        guard let offsets = pendingDelete else { return }
-        let targets = offsets.map { design.zones[$0] }
-        targets.forEach { design.removeZone($0) }
-        try? modelContext.save()
-        pendingDelete = nil
     }
 }
 
@@ -101,11 +117,12 @@ private struct ZonesSection: View {
 
 private struct NetworkSection: View {
     @Bindable var design: Design
+    @Binding var deleteRequest: DeleteRequest?
     @Environment(\.modelContext) private var modelContext
-    @State private var pendingDelete: IndexSet?
+    @AppStorage("section.network.expanded") private var isExpanded = true
 
     var body: some View {
-        Section {
+        Section(isExpanded: $isExpanded) {
             ForEach(design.network, id: \.persistentModelID) { conn in
                 NavigationLink {
                     ConnectionEditorView(design: design, editing: conn)
@@ -119,26 +136,20 @@ private struct NetworkSection: View {
                 }
                 .isDetailLink(false)
             }
-            .onDelete { pendingDelete = $0 }
-        } header: {
-            SectionHeader(title: "Network") {
-                ConnectionEditorView(design: design)
-            }
-        }
-        .confirmationDialog(
-            "Delete \(pendingDelete?.count ?? 0) connection(s)?",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let offsets = pendingDelete {
-                    let targets = offsets.map { design.network[$0] }
+            .onDelete { offsets in
+                let targets = offsets.map { design.network[$0] }
+                deleteRequest = DeleteRequest(
+                    title: "Delete \(targets.count) connection(s)?",
+                    message: nil
+                ) {
                     targets.forEach { design.removeConnection($0) }
                     try? modelContext.save()
                 }
-                pendingDelete = nil
             }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } header: {
+            SectionHeader(title: "Network", isExpanded: $isExpanded, count: design.network.count) {
+                ConnectionEditorView(design: design)
+            }
         }
     }
 }
@@ -147,11 +158,12 @@ private struct NetworkSection: View {
 
 private struct ComputeSection: View {
     @Bindable var design: Design
+    @Binding var deleteRequest: DeleteRequest?
     @Environment(\.modelContext) private var modelContext
-    @State private var pendingDelete: IndexSet?
+    @AppStorage("section.compute.expanded") private var isExpanded = true
 
     var body: some View {
-        Section {
+        Section(isExpanded: $isExpanded) {
             ForEach(design.physicalComputeNodes, id: \.persistentModelID) { node in
                 NavigationLink {
                     ComputeNodeEditorView(design: design, editing: node)
@@ -165,28 +177,20 @@ private struct ComputeSection: View {
                 }
                 .isDetailLink(false)
             }
-            .onDelete { pendingDelete = $0 }
-        } header: {
-            SectionHeader(title: "Compute") {
-                ComputeNodeEditorView(design: design)
-            }
-        }
-        .confirmationDialog(
-            "Delete \(pendingDelete?.count ?? 0) compute node(s)?",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let offsets = pendingDelete {
-                    let targets = offsets.map { design.physicalComputeNodes[$0] }
+            .onDelete { offsets in
+                let targets = offsets.map { design.physicalComputeNodes[$0] }
+                deleteRequest = DeleteRequest(
+                    title: "Delete \(targets.count) compute node(s)?",
+                    message: "Hosts also remove their virtual machines."
+                ) {
                     targets.forEach { design.removeCompute($0) }
                     try? modelContext.save()
                 }
-                pendingDelete = nil
             }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-        } message: {
-            Text("Hosts also remove their virtual machines.")
+        } header: {
+            SectionHeader(title: "Compute", isExpanded: $isExpanded, count: design.physicalComputeNodes.count) {
+                ComputeNodeEditorView(design: design)
+            }
         }
     }
 
@@ -203,15 +207,16 @@ private struct ComputeSection: View {
 
 private struct ServicesSection: View {
     @Bindable var design: Design
+    @Binding var deleteRequest: DeleteRequest?
     @Environment(\.modelContext) private var modelContext
-    @State private var pendingDelete: IndexSet?
+    @AppStorage("section.services.expanded") private var isExpanded = true
 
     private var sortedServices: [ServiceDef] {
         design.services.values.sorted(by: { $0.serviceType < $1.serviceType })
     }
 
     var body: some View {
-        Section {
+        Section(isExpanded: $isExpanded) {
             ForEach(sortedServices, id: \.serviceType) { def in
                 VStack(alignment: .leading) {
                     Text(def.name)
@@ -220,28 +225,21 @@ private struct ServicesSection: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .onDelete { pendingDelete = $0 }
-        } header: {
-            SectionHeader(title: "Services") {
-                ServiceDefPickerView(design: design)
-            }
-        }
-        .confirmationDialog(
-            "Delete \(pendingDelete?.count ?? 0) service(s)?",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let offsets = pendingDelete {
-                    let services = sortedServices
-                    for i in offsets { design.removeServiceDef(services[i]) }
+            .onDelete { offsets in
+                let services = sortedServices
+                let targets = offsets.map { services[$0] }
+                deleteRequest = DeleteRequest(
+                    title: "Delete \(targets.count) service(s)?",
+                    message: "Service providers using these services will be updated."
+                ) {
+                    targets.forEach { design.removeServiceDef($0) }
                     try? modelContext.save()
                 }
-                pendingDelete = nil
             }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-        } message: {
-            Text("Service providers using these services will be updated.")
+        } header: {
+            SectionHeader(title: "Services", isExpanded: $isExpanded, count: sortedServices.count) {
+                ServiceDefPickerView(design: design)
+            }
         }
     }
 }
@@ -250,11 +248,12 @@ private struct ServicesSection: View {
 
 private struct ServiceProvidersSection: View {
     @Bindable var design: Design
+    @Binding var deleteRequest: DeleteRequest?
     @Environment(\.modelContext) private var modelContext
-    @State private var pendingDelete: IndexSet?
+    @AppStorage("section.serviceProviders.expanded") private var isExpanded = true
 
     var body: some View {
-        Section {
+        Section(isExpanded: $isExpanded) {
             ForEach(design.serviceProviders, id: \.persistentModelID) { sp in
                 NavigationLink {
                     ServiceProviderEditorView(design: design, editing: sp)
@@ -268,26 +267,20 @@ private struct ServiceProvidersSection: View {
                 }
                 .isDetailLink(false)
             }
-            .onDelete { pendingDelete = $0 }
-        } header: {
-            SectionHeader(title: "Service Providers") {
-                ServiceProviderEditorView(design: design)
-            }
-        }
-        .confirmationDialog(
-            "Delete \(pendingDelete?.count ?? 0) service provider(s)?",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let offsets = pendingDelete {
-                    let targets = offsets.map { design.serviceProviders[$0] }
+            .onDelete { offsets in
+                let targets = offsets.map { design.serviceProviders[$0] }
+                deleteRequest = DeleteRequest(
+                    title: "Delete \(targets.count) service provider(s)?",
+                    message: nil
+                ) {
                     targets.forEach { design.removeServiceProvider($0) }
                     try? modelContext.save()
                 }
-                pendingDelete = nil
             }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } header: {
+            SectionHeader(title: "Service Providers", isExpanded: $isExpanded, count: design.serviceProviders.count) {
+                ServiceProviderEditorView(design: design)
+            }
         }
     }
 
@@ -301,11 +294,12 @@ private struct ServiceProvidersSection: View {
 
 private struct WorkflowDefsSection: View {
     @Bindable var design: Design
+    @Binding var deleteRequest: DeleteRequest?
     @Environment(\.modelContext) private var modelContext
-    @State private var pendingDelete: IndexSet?
+    @AppStorage("section.workflowDefs.expanded") private var isExpanded = true
 
     var body: some View {
-        Section {
+        Section(isExpanded: $isExpanded) {
             ForEach(design.workflowDefinitions, id: \.persistentModelID) { def in
                 NavigationLink {
                     WorkflowChainEditorView(design: design, workflowDef: def)
@@ -317,29 +311,21 @@ private struct WorkflowDefsSection: View {
                 }
                 .isDetailLink(false)
             }
-            .onDelete { pendingDelete = $0 }
-        } header: {
-            SectionHeader(title: "Workflow Definitions") {
-                WorkflowDefPickerView(design: design)
-            }
-        }
-        .confirmationDialog(
-            "Delete \(pendingDelete?.count ?? 0) workflow definition(s)?",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let offsets = pendingDelete {
-                    let targets = offsets.map { design.workflowDefinitions[$0] }
+            .onDelete { offsets in
+                let targets = offsets.map { design.workflowDefinitions[$0] }
+                deleteRequest = DeleteRequest(
+                    title: "Delete \(targets.count) workflow definition(s)?",
+                    message: "Workflows that use these definitions will also be removed."
+                ) {
                     targets.forEach { design.removeWorkflowDefinition($0) }
                     design.updateConfiguredWorkflows()
                     try? modelContext.save()
                 }
-                pendingDelete = nil
             }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-        } message: {
-            Text("Workflows that use these definitions will also be removed.")
+        } header: {
+            SectionHeader(title: "Workflow Definitions", isExpanded: $isExpanded, count: design.workflowDefinitions.count) {
+                WorkflowDefPickerView(design: design)
+            }
         }
     }
 
@@ -362,11 +348,12 @@ private struct WorkflowDefsSection: View {
 
 private struct WorkflowsSection: View {
     @Bindable var design: Design
+    @Binding var deleteRequest: DeleteRequest?
     @Environment(\.modelContext) private var modelContext
-    @State private var pendingDelete: IndexSet?
+    @AppStorage("section.workflows.expanded") private var isExpanded = true
 
     var body: some View {
-        Section {
+        Section(isExpanded: $isExpanded) {
             ForEach(design.allWorkflows, id: \.persistentModelID) { wf in
                 NavigationLink {
                     WorkflowEditorView(design: design, editing: wf)
@@ -380,26 +367,20 @@ private struct WorkflowsSection: View {
                 }
                 .isDetailLink(false)
             }
-            .onDelete { pendingDelete = $0 }
-        } header: {
-            SectionHeader(title: "Workflows") {
-                WorkflowEditorView(design: design)
-            }
-        }
-        .confirmationDialog(
-            "Delete \(pendingDelete?.count ?? 0) workflow(s)?",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let offsets = pendingDelete {
-                    let targets = offsets.map { design.allWorkflows[$0] }
+            .onDelete { offsets in
+                let targets = offsets.map { design.allWorkflows[$0] }
+                deleteRequest = DeleteRequest(
+                    title: "Delete \(targets.count) workflow(s)?",
+                    message: nil
+                ) {
                     targets.forEach { design.removeWorkflow($0) }
                     try? modelContext.save()
                 }
-                pendingDelete = nil
             }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } header: {
+            SectionHeader(title: "Workflows", isExpanded: $isExpanded, count: design.allWorkflows.count) {
+                WorkflowEditorView(design: design)
+            }
         }
     }
 
@@ -450,12 +431,39 @@ private struct ValidationSection: View {
 
 struct SectionHeader<Destination: View>: View {
     let title: String
+    /// When supplied, the header shows a tappable chevron that collapses the
+    /// section. When `nil`, the title is rendered plainly (non-collapsible).
+    var isExpanded: Binding<Bool>? = nil
+    /// When supplied, the header shows the item count as a badge so the user
+    /// can gauge a section's size without expanding it.
+    var count: Int? = nil
     @ViewBuilder var destination: () -> Destination
 
     var body: some View {
         HStack {
-            Text(title)
-				.font(Font.title2.bold())
+            if let isExpanded {
+                Button {
+                    withAnimation { isExpanded.wrappedValue.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isExpanded.wrappedValue ? 90 : 0))
+                        Text(title)
+                            .font(Font.title2.bold())
+                        countBadge
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(Font.title2.bold())
+                    countBadge
+                }
+            }
             Spacer()
             NavigationLink {
                 destination()
@@ -464,6 +472,19 @@ struct SectionHeader<Destination: View>: View {
                     .foregroundStyle(.tint)
             }
             .isDetailLink(false)
+        }
+    }
+
+    @ViewBuilder
+    private var countBadge: some View {
+        if let count {
+            Text("\(count)")
+                .font(.footnote.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(.secondary.opacity(0.15), in: Capsule())
         }
     }
 }

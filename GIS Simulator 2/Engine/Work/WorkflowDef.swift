@@ -20,7 +20,7 @@ public class WorkflowDef: Described, Hashable, Codable {
 	public var name: String
 	public var desc: String
 	public var thinkTimeSeconds: Int
-	public var chains: [WorkflowChain]
+	@Relationship(deleteRule: .cascade) public var chains: [WorkflowChain] = []
 	
 	public init(name: String, desc: String, thinkTimeSeconds: Int, chains: [WorkflowChain]) {
 		self.name = name

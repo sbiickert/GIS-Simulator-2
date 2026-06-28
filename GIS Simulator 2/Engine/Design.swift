@@ -12,13 +12,13 @@ import SwiftData
 public class Design: Described, Validatable {
 	public var name: String
 	public var desc: String
-	public var zones: [Zone]
-	public var network: [Connection]
-	public var services: Dictionary<String, ServiceDef> // Just defining "map", "dbms", etc.
-	public var serviceProviders: [ServiceProvider]
-	public var workflowDefinitions: [WorkflowDef]
-	var workflows: [Workflow] = []
-	var physicalComputeNodes: [ComputeNode] = []
+	@Relationship(deleteRule: .cascade) public var zones: [Zone] = []
+	@Relationship(deleteRule: .cascade) public var network: [Connection] = []
+	public var services: Dictionary<String, ServiceDef> = [:] // Just defining "map", "dbms", etc.
+	@Relationship(deleteRule: .cascade) public var serviceProviders: [ServiceProvider] = []
+	@Relationship(deleteRule: .cascade) public var workflowDefinitions: [WorkflowDef] = []
+	@Relationship(deleteRule: .cascade) var workflows: [Workflow] = []
+	@Relationship(deleteRule: .cascade) var physicalComputeNodes: [ComputeNode] = []
 
 	private static var _nextId: Int = 0
 	public static var nextId: Int {

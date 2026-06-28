@@ -44,7 +44,13 @@ public nonisolated class ComputeNode: Described, Hashable, ServiceTimeCalculator
 	public var threading: ThreadingModel
 	
 	private var _vCores: Int = 0			// if type == .vm
-	private var _vmList: [ComputeNode] = []	// if type == .host
+	@Relationship(deleteRule: .cascade) private var _vmList: [ComputeNode] = []	// if type == .host
+
+	public func attachVirtualMachine(_ vm: ComputeNode) {
+		guard self.type == .host else { fatalError("Attempt to add a VM to something other than a physical host.") }
+		guard vm.type == .vm else { fatalError("attachVirtualMachine requires a VM node.") }
+		_vmList.append(vm)
+	}
 	
 	public init(name: String, desc: String, hwDef: HardwareDef, memoryGB: Int, zone: Zone, type: ComputeNodeType) {
 		self.name = name

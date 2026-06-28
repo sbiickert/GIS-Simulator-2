@@ -23,7 +23,7 @@ public class ServiceProvider: Described, Validatable, Hashable, Codable {
 	public var desc: String
 	public var service: ServiceDef
 	public var tags: Set<String>
-	var nodes: [ComputeNode]
+	@Relationship var nodes: [ComputeNode] = []
 	var _primary = 0
 	
 	public init(name: String, desc: String, service: ServiceDef, nodes: [ComputeNode] = [], tags: Set<String> = [], _primary: Int = 0) {

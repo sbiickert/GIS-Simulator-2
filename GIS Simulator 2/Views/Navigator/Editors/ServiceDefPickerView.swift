@@ -11,6 +11,7 @@ struct ServiceDefPickerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.library) private var library
+    @Environment(\.modelContext) private var modelContext
 
     @State private var selected: Set<String> = []
 
@@ -20,49 +21,41 @@ struct ServiceDefPickerView: View {
         "mobile", "portal", "pro", "relational", "web"
     ]
 
-    private var availableServices: [(String, ServiceDef)] {
+    /// Service definitions not yet added to the design, favorites first.
+    private var availableEntries: [CatalogEntry<ServiceDef>] {
         let existing = Set(design.services.keys)
-        return library.serviceDefinitions
-            .sorted(by: { $0.key < $1.key })
-            .filter { !existing.contains($0.key) }
+        return design.serviceCatalog(library).filter { !existing.contains($0.key) }
+    }
+
+    private var favoriteEntries: [CatalogEntry<ServiceDef>] {
+        availableEntries.filter(\.isFavorite)
+    }
+
+    private var otherEntries: [CatalogEntry<ServiceDef>] {
+        availableEntries.filter { !$0.isFavorite }
     }
 
     var body: some View {
         List {
-            if !availableServices.isEmpty {
+            if !availableEntries.isEmpty {
                 Section {
                     Button("Select Minimal Set") { selectMinimalSet() }
                 }
             }
-            Section {
-                if availableServices.isEmpty {
+            if availableEntries.isEmpty {
+                Section {
                     Text("All service types have been added")
                         .foregroundStyle(.secondary)
-                } else {
-                    ForEach(availableServices, id: \.0) { _, def in
-                        Button {
-                            toggle(def.serviceType)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(def.name)
-                                        .foregroundStyle(.primary)
-                                    Text("\(def.serviceType) - \(def.balancingModel.rawValue)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if selected.contains(def.serviceType) {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
+                }
+            } else {
+                if !favoriteEntries.isEmpty {
+                    Section("Favorites") {
+                        ForEach(favoriteEntries, id: \.key) { row($0) }
                     }
                 }
-            } header: {
-                Text(availableServices.isEmpty ? "" : "Select service types to add")
+                Section(favoriteEntries.isEmpty ? "Select service types to add" : "All") {
+                    ForEach(otherEntries, id: \.key) { row($0) }
+                }
             }
         }
         .navigationTitle("Add Services")
@@ -74,9 +67,36 @@ struct ServiceDefPickerView: View {
         }
     }
 
+    @ViewBuilder
+    private func row(_ entry: CatalogEntry<ServiceDef>) -> some View {
+        HStack {
+            FavoriteButton(isFavorite: entry.isFavorite) { toggleFavorite(entry.key) }
+            Button {
+                toggle(entry.key)
+            } label: {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(entry.item.name)
+                            .foregroundStyle(.primary)
+                        Text("\(entry.key) - \(entry.item.balancingModel.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if selected.contains(entry.key) {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(.tint)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func selectMinimalSet() {
-        for (_, def) in availableServices where minimalServiceTypes.contains(def.serviceType) {
-            selected.insert(def.serviceType)
+        for entry in availableEntries where minimalServiceTypes.contains(entry.key) {
+            selected.insert(entry.key)
         }
     }
 
@@ -88,9 +108,15 @@ struct ServiceDefPickerView: View {
         }
     }
 
+    private func toggleFavorite(_ key: String) {
+        design.toggleFavorite(key, in: \.favoriteServices)
+        try? modelContext.save()
+    }
+
     private func commit() {
-        for (_, def) in availableServices where selected.contains(def.serviceType) {
-            design.addServiceDef(def)
+        let toAdd = availableEntries.filter { selected.contains($0.key) }
+        for entry in toAdd {
+            design.addServiceDef(entry.item)
         }
         dismiss()
     }

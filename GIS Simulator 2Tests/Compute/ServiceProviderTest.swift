@@ -29,8 +29,8 @@ struct ServiceProviderTest {
 		sp = ServiceProviderTest.sampleHaMapSP
 		#expect(sp.name == "GIS HA Site")
 		#expect(sp.isValid)
-		var node1 = await sp.handlerNode
-		var node2 = await sp.handlerNode
+		var node1 = await sp.nextHandlerNode()
+		var node2 = await sp.nextHandlerNode()
 		#expect(node1 != node2) // Round-robining
 		
 		sp = ServiceProviderTest.sampleDbmsSP
@@ -40,8 +40,8 @@ struct ServiceProviderTest {
 		sp = ServiceProviderTest.sampleHaDatastoreSP
 		#expect(sp.name == "Relational DS")
 		#expect(sp.isValid)
-		node1 = await sp.handlerNode
-		node2 = await sp.handlerNode
+		node1 = await sp.nextHandlerNode()
+		node2 = await sp.nextHandlerNode()
 		#expect(node1 == node2) // Failover (i.e. got primary twice)
 		
 		sp = ServiceProviderTest.sampleFileSP

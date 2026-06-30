@@ -30,6 +30,7 @@ struct DesignDetailView: View {
             ServiceProvidersSection(design: design, deleteRequest: $deleteRequest)
             WorkflowDefsSection(design: design, deleteRequest: $deleteRequest)
             WorkflowsSection(design: design, deleteRequest: $deleteRequest)
+            LibrarySection(design: design)
             ValidationSection(design: design)
         }
         .navigationTitle(design.name)
@@ -310,6 +311,14 @@ private struct WorkflowDefsSection: View {
                     }
                 }
                 .isDetailLink(false)
+                .swipeActions(edge: .trailing) {
+                    Button {
+                        duplicate(def)
+                    } label: {
+                        Label("Duplicate", systemImage: "plus.square.on.square")
+                    }
+                    .tint(.blue)
+                }
             }
             .onDelete { offsets in
                 let targets = offsets.map { design.workflowDefinitions[$0] }
@@ -322,11 +331,34 @@ private struct WorkflowDefsSection: View {
                     try? modelContext.save()
                 }
             }
+            NavigationLink {
+                WorkflowDefEditorView(design: design)
+            } label: {
+                Label("New Definition…", systemImage: "plus")
+            }
+            .isDetailLink(false)
         } header: {
             SectionHeader(title: "Workflow Definitions", isExpanded: $isExpanded, count: design.workflowDefinitions.count) {
                 WorkflowDefPickerView(design: design)
             }
         }
+    }
+
+    /// Creates an independent custom copy of a definition, including fresh copies
+    /// of its chains, and adds it to the design.
+    private func duplicate(_ def: WorkflowDef) {
+        let existing = Set(design.workflowDefinitions.map(\.name))
+        let name = design.uniqueCopyName(base: def.name, existingKeys: existing)
+        let chainCopies = def.chains.map {
+            WorkflowChain(name: $0.name, description: $0.desc, steps: $0.steps, serviceProviders: [:])
+        }
+        for chain in chainCopies { modelContext.insert(chain) }
+        let copy = WorkflowDef(name: name, desc: def.desc, thinkTimeSeconds: def.thinkTimeSeconds, chains: chainCopies)
+        modelContext.insert(copy)
+        try? modelContext.save()
+        design.workflowDefinitions.append(copy)
+        design.addFavorite(name, in: \.favoriteWorkflowDefs)
+        try? modelContext.save()
     }
 
     @ViewBuilder
@@ -390,6 +422,59 @@ private struct WorkflowsSection: View {
             return "User: \(wf.userCount) users, productivity \(wf.productivity)"
         case .transactional:
             return "Transactional: \(wf.tph) tph"
+        }
+    }
+}
+
+// MARK: - Library
+
+/// Entry points for managing this design's building-block catalogs (predefined
+/// library items plus the design's own custom items: favorite / copy / CRUD).
+private struct LibrarySection: View {
+    @Bindable var design: Design
+    @AppStorage("section.library.expanded") private var isExpanded = true
+
+    var body: some View {
+        Section(isExpanded: $isExpanded) {
+            NavigationLink {
+                HardwareLibraryView(design: design)
+            } label: {
+                Label("Hardware", systemImage: "cpu")
+            }
+            .isDetailLink(false)
+            NavigationLink {
+                ServiceLibraryView(design: design)
+            } label: {
+                Label("Services", systemImage: "square.stack.3d.up")
+            }
+            .isDetailLink(false)
+            NavigationLink {
+                StepLibraryView(design: design)
+            } label: {
+                Label("Workflow Steps", systemImage: "list.bullet.rectangle")
+            }
+            .isDetailLink(false)
+            NavigationLink {
+                ChainLibraryView(design: design)
+            } label: {
+                Label("Workflow Chains", systemImage: "link")
+            }
+            .isDetailLink(false)
+        } header: {
+            Button {
+                withAnimation { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    Text("Library")
+                        .font(Font.title2.bold())
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 }

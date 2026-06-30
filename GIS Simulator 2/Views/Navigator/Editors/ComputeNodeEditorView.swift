@@ -23,8 +23,10 @@ struct ComputeNodeEditorView: View {
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
 
+    /// Hardware choices, favorites first (then alphabetical), merging the
+    /// design's custom hardware with the predefined library.
     private var sortedHardware: [(String, HardwareDef)] {
-        library.hardwareDefinitions.sorted(by: { $0.key < $1.key })
+        design.hardwareCatalog(library).map { ($0.key, $0.item) }
     }
 
     /// The hardware currently chosen in the picker (may differ from the saved
@@ -50,7 +52,11 @@ struct ComputeNodeEditorView: View {
                 TextField("Description", text: $desc)
                 Picker("Hardware", selection: $hwIndex) {
                     ForEach(Array(sortedHardware.enumerated()), id: \.offset) { i, entry in
-                        Text(entry.0).tag(i)
+                        if design.favoriteHardware.contains(entry.0) {
+                            Label(entry.0, systemImage: "star.fill").tag(i)
+                        } else {
+                            Text(entry.0).tag(i)
+                        }
                     }
                 }
                 Stepper("Memory: \(memoryGB) GB", value: $memoryGB, in: 1...4096, step: 8)

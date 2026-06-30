@@ -143,7 +143,7 @@ public class Workflow: Described, Validatable, Hashable, Codable {
 		var step = chain.steps.first!
 		var sourceSP = chain.serviceProvider(for: step)
 		if sourceSP == nil { fatalError("Chain \(chain.name) has a step (\(step.name)) that doesn't have a corresponding service provider.") }
-		var sourceNode = sourceSP!.handlerNode
+		var sourceNode = sourceSP!.nextHandlerNode()
 		if sourceNode == nil { fatalError("Service provider \(sourceSP!.name) has no handler node.") }
 		
 		// Keep track of compute nodes to retrace steps
@@ -162,7 +162,7 @@ public class Workflow: Described, Validatable, Hashable, Codable {
 			
 			let destSP = chain.serviceProvider(for: step)
 			if destSP == nil { fatalError("Chain \(chain.name) has a step (\(step.name)) that doesn't have a corresponding service provider.") }
-			let destNode = destSP!.handlerNode
+			let destNode = destSP!.nextHandlerNode()
 			if destNode == nil { fatalError("Service provider \(destSP!.name) has no handler node.") }
 			
 			if sourceNode != destNode {

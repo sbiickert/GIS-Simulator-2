@@ -15,43 +15,36 @@ struct WorkflowDefPickerView: View {
 
     @State private var selected: Set<String> = []
 
-    private var availableDefs: [(String, WorkflowDef)] {
+    /// Workflow definitions not yet added to the design, favorites first.
+    private var availableEntries: [CatalogEntry<WorkflowDef>] {
         let existing = Set(design.workflowDefinitions.map(\.name))
-        return library.workflowDefinitions
-            .sorted(by: { $0.key < $1.key })
-            .filter { !existing.contains($0.key) }
+        return design.workflowDefCatalog(library).filter { !existing.contains($0.key) }
+    }
+
+    private var favoriteEntries: [CatalogEntry<WorkflowDef>] {
+        availableEntries.filter(\.isFavorite)
+    }
+
+    private var otherEntries: [CatalogEntry<WorkflowDef>] {
+        availableEntries.filter { !$0.isFavorite }
     }
 
     var body: some View {
         List {
-            Section {
-                if availableDefs.isEmpty {
+            if availableEntries.isEmpty {
+                Section {
                     Text("All workflow definitions have been added")
                         .foregroundStyle(.secondary)
-                } else {
-                    ForEach(availableDefs, id: \.0) { _, def in
-                        Button {
-                            toggle(def.name)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(def.name)
-                                        .foregroundStyle(.primary)
-                                    Text("\(def.chains.count) chains: \(def.chains.map(\.name).joined(separator: ", ")) — think time: \(def.thinkTimeSeconds)s")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if selected.contains(def.name) {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                        }
+                }
+            } else {
+                if !favoriteEntries.isEmpty {
+                    Section("Favorites") {
+                        ForEach(favoriteEntries, id: \.key) { row($0) }
                     }
                 }
-            } header: {
-                Text(availableDefs.isEmpty ? "" : "Select workflow definitions to add")
+                Section(favoriteEntries.isEmpty ? "Select workflow definitions to add" : "All") {
+                    ForEach(otherEntries, id: \.key) { row($0) }
+                }
             }
         }
         .navigationTitle("Add Workflow Definition")
@@ -63,6 +56,34 @@ struct WorkflowDefPickerView: View {
         }
     }
 
+    @ViewBuilder
+    private func row(_ entry: CatalogEntry<WorkflowDef>) -> some View {
+        let def = entry.item
+        HStack {
+            FavoriteButton(isFavorite: entry.isFavorite) { toggleFavorite(entry.key) }
+            Button {
+                toggle(entry.key)
+            } label: {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(def.name)
+                            .foregroundStyle(.primary)
+                        Text("\(def.chains.count) chains: \(def.chains.map(\.name).joined(separator: ", ")) — think time: \(def.thinkTimeSeconds)s")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if selected.contains(entry.key) {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(.tint)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func toggle(_ name: String) {
         if selected.contains(name) {
             selected.remove(name)
@@ -71,16 +92,22 @@ struct WorkflowDefPickerView: View {
         }
     }
 
+    private func toggleFavorite(_ key: String) {
+        design.toggleFavorite(key, in: \.favoriteWorkflowDefs)
+        try? modelContext.save()
+    }
+
     private func commit() {
-        for (_, def) in availableDefs where selected.contains(def.name) {
-            modelContext.insert(def)
-            for chain in def.chains {
+        let toAdd = availableEntries.filter { selected.contains($0.key) }
+        for entry in toAdd {
+            modelContext.insert(entry.item)
+            for chain in entry.item.chains {
                 modelContext.insert(chain)
             }
         }
         try? modelContext.save()
-        for (_, def) in availableDefs where selected.contains(def.name) {
-            design.workflowDefinitions.append(def)
+        for entry in toAdd {
+            design.workflowDefinitions.append(entry.item)
         }
         try? modelContext.save()
         dismiss()

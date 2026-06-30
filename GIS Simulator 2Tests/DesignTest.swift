@@ -12,7 +12,7 @@ struct DesignTest {
 
     @Test func create() async throws {
         let d = DesignTest.sampleDesign
-		#expect("Design 1" == d.name)
+		#expect("Test Design" == d.name)
 		#expect(4 == d.zones.count)
 		
 		let dmz = await d.findZone(named: "DMZ")
@@ -93,8 +93,113 @@ struct DesignTest {
 		#expect(d.isValid)
 	}
 
+	// MARK: - Library customization
+
+	@Test func catalogMergesAndSortsFavoritesFirst() async throws {
+		let d = Design(name: "Cat", desc: "")
+		let alpha = HardwareDef(processor: "Alpha", cores: 4, specIntRate2017: 10)   // predefined
+		let beta  = HardwareDef(processor: "Beta", cores: 4, specIntRate2017: 10)    // predefined, favorite
+		let gamma = HardwareDef(processor: "Gamma", cores: 8, specIntRate2017: 20)   // custom
+
+		let entries = await d.catalog(predefined: [alpha, beta], custom: [gamma], favorites: ["Beta"])
+
+		// Favorites first, then alphabetical by key.
+		#expect(entries.map(\.key) == ["Beta", "Alpha", "Gamma"])
+		#expect(entries[0].isFavorite)
+		#expect(entries[0].isCustom == false)
+		#expect(entries.first(where: { $0.key == "Gamma" })!.isCustom)
+	}
+
+	@Test func customItemShadowsPredefinedAndLeavesItUntouched() async throws {
+		let d = Design(name: "Shadow", desc: "")
+		let predefined = HardwareDef(processor: "Xeon", cores: 12, specIntRate2017: 67)
+		let custom = HardwareDef(processor: "Xeon", cores: 24, specIntRate2017: 99) // same key, edited
+		d.customHardware = [custom]
+
+		let entries = await d.catalog(predefined: [predefined], custom: [custom], favorites: [])
+
+		#expect(entries.count == 1)                       // custom shadows predefined
+		#expect(entries[0].isCustom)
+		#expect(entries[0].item.cores == 24)
+		#expect(predefined.cores == 12)                   // predefined value is never mutated
+	}
+
+	@Test func toggleFavoriteAddsAndRemoves() async throws {
+		let d = Design(name: "Fav", desc: "")
+
+		var isFav = await d.isFavorite("map", in: \.favoriteServices)
+		#expect(isFav == false)
+
+		await d.toggleFavorite("map", in: \.favoriteServices)
+		isFav = await d.isFavorite("map", in: \.favoriteServices)
+		#expect(isFav)
+		#expect(d.favoriteServices == ["map"])
+
+		await d.toggleFavorite("map", in: \.favoriteServices)
+		isFav = await d.isFavorite("map", in: \.favoriteServices)
+		#expect(isFav == false)
+		#expect(d.favoriteServices.isEmpty)
+	}
+
+	@Test func addFavoriteIsIdempotent() async throws {
+		let d = Design(name: "Fav", desc: "")
+
+		await d.addFavorite("Custom CPU", in: \.favoriteHardware)
+		await d.addFavorite("Custom CPU", in: \.favoriteHardware)
+		#expect(d.favoriteHardware == ["Custom CPU"])
+	}
+
+	@Test func uniqueCopyNameAvoidsCollisions() async throws {
+		let d = Design(name: "Copy", desc: "")
+
+		let first = await d.uniqueCopyName(base: "Map", existingKeys: [])
+		#expect(first == "Map copy")
+
+		let second = await d.uniqueCopyName(base: "Map", existingKeys: ["Map copy"])
+		#expect(second == "Map copy 2")
+
+		let third = await d.uniqueCopyName(base: "Map", existingKeys: ["Map copy", "Map copy 2"])
+		#expect(third == "Map copy 3")
+	}
+
+	@Test func upsertAndRemoveCustomValueItems() async throws {
+		let d = Design(name: "CRUD", desc: "")
+
+		let hw = HardwareDef(processor: "Custom CPU", cores: 16, specIntRate2017: 80)
+		await d.upsertCustomHardware(hw)
+		#expect(d.customHardware.count == 1)
+
+		// Upsert with same key replaces rather than duplicates.
+		let hwEdited = HardwareDef(processor: "Custom CPU", cores: 32, specIntRate2017: 160)
+		await d.upsertCustomHardware(hwEdited)
+		#expect(d.customHardware.count == 1)
+		#expect(d.customHardware[0].cores == 32)
+
+		// Removing also clears any favorite for that key.
+		d.favoriteHardware = ["Custom CPU"]
+		await d.removeCustomHardware(key: "Custom CPU")
+		#expect(d.customHardware.isEmpty)
+		#expect(d.favoriteHardware.isEmpty)
+	}
+
+	@Test func removingCustomServiceDefInUseRevalidatesDesign() async throws {
+		let d = DesignTest.sampleDesign
+		#expect(d.isValid)
+		#expect(d.services["map"] != nil)
+
+		// Pretend "map" is a custom service def that is also in use.
+		await d.upsertCustomServiceDef(ServiceDefTest.sampleService(type: "map"))
+		await d.removeCustomServiceDef(key: "map")
+
+		// Catalog entry gone and the in-use service was dropped + dependents updated.
+		#expect(d.customServiceDefs.isEmpty)
+		#expect(d.services["map"] == nil)
+		let mapProviders = await d.serviceProviders.filter { $0.service.serviceType == "map" }
+		#expect(mapProviders.isEmpty)
+	}
+
 	public static var sampleDesign: Design {
-		let d = Design(name: Design.nextName, desc: "Sample Design")
+		let d = Design(name: "Test Design", desc: "Sample Design")
 		
 		// Zones and Connections
 		d.addZone(ZoneTest.sampleIntranetZone, localBandwidthMbps: 1000, localLatencyMS: 0)

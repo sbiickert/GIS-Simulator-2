@@ -17,6 +17,14 @@ struct WorkflowChainEditorView: View {
 
     var body: some View {
         Form {
+            Section {
+                NavigationLink {
+                    WorkflowDefEditorView(design: design, editing: workflowDef)
+                } label: {
+                    Label("Edit Definition (name, chains, think time)", systemImage: "pencil")
+                }
+                .isDetailLink(false)
+            }
             ForEach(workflowDef.chains, id: \.persistentModelID) { chain in
                 Section("Chain: \(chain.name)") {
                     ChainServiceProviderPickers(design: design, chain: chain)

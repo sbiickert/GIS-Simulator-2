@@ -8,6 +8,16 @@
 import Foundation
 import SwiftData
 
+/// A single row in a merged library pick list: the item plus whether it is
+/// favorited and whether it is a custom (editable) item versus a read-only
+/// predefined library template.
+public struct CatalogEntry<T: LibraryItem> {
+	public let item: T
+	public let key: String
+	public let isFavorite: Bool
+	public let isCustom: Bool
+}
+
 @Model
 public class Design: Described, Validatable {
 	public var name: String
@@ -19,6 +29,23 @@ public class Design: Described, Validatable {
 	@Relationship(deleteRule: .cascade) public var workflowDefinitions: [WorkflowDef] = []
 	@Relationship(deleteRule: .cascade) var workflows: [Workflow] = []
 	@Relationship(deleteRule: .cascade) var physicalComputeNodes: [ComputeNode] = []
+
+	// MARK: Library customization (per-Design)
+	// Copies of, or brand-new, library building blocks authored within this design.
+	// Value-type items persist as stored properties; @Model items use relationships.
+	// WorkflowDef customizations reuse the existing `workflowDefinitions` collection.
+	public var customHardware: [HardwareDef] = []
+	public var customServiceDefs: [ServiceDef] = []
+	public var customWorkflowSteps: [WorkflowDefStep] = []
+	@Relationship(deleteRule: .cascade) public var customWorkflowChains: [WorkflowChain] = []
+
+	// Favorite keys (predefined or custom) per type. Favorites float to the top
+	// of pick lists. Keys are the items' `libraryKey` (processor / serviceType / name).
+	public var favoriteHardware: [String] = []
+	public var favoriteServices: [String] = []
+	public var favoriteSteps: [String] = []
+	public var favoriteChains: [String] = []
+	public var favoriteWorkflowDefs: [String] = []
 
 	private static var _nextId: Int = 0
 	public static var nextId: Int {
@@ -309,6 +336,146 @@ public class Design: Described, Validatable {
 		let connQueues = network.map { $0.provideQueue() }
 		let compQueues = allComputeNodes.map { $0.provideQueue() }
 		return connQueues + compQueues
+	}
+
+	// MARK: - Library catalog (predefined ∪ custom)
+
+	/// Merges predefined library items with this design's custom items, marks
+	/// which are favorited/custom, and sorts favorites first, then by key.
+	/// Custom items shadow predefined items that share a key (keys should be
+	/// unique across both, but this keeps the result stable if they ever collide).
+	public func catalog<T: LibraryItem>(predefined: [T], custom: [T], favorites: [String]) -> [CatalogEntry<T>] {
+		let favSet = Set(favorites)
+		var entries: [CatalogEntry<T>] = []
+		var seen = Set<String>()
+
+		for item in custom {
+			let key = item.libraryKey
+			seen.insert(key)
+			entries.append(CatalogEntry(item: item, key: key, isFavorite: favSet.contains(key), isCustom: true))
+		}
+		for item in predefined where !seen.contains(item.libraryKey) {
+			let key = item.libraryKey
+			entries.append(CatalogEntry(item: item, key: key, isFavorite: favSet.contains(key), isCustom: false))
+		}
+
+		return entries.sorted { lhs, rhs in
+			if lhs.isFavorite != rhs.isFavorite { return lhs.isFavorite }
+			return lhs.key.localizedCaseInsensitiveCompare(rhs.key) == .orderedAscending
+		}
+	}
+
+	public func hardwareCatalog(_ library: Library) -> [CatalogEntry<HardwareDef>] {
+		catalog(predefined: Array(library.hardwareDefinitions.values), custom: customHardware, favorites: favoriteHardware)
+	}
+
+	public func serviceCatalog(_ library: Library) -> [CatalogEntry<ServiceDef>] {
+		catalog(predefined: Array(library.serviceDefinitions.values), custom: customServiceDefs, favorites: favoriteServices)
+	}
+
+	public func stepCatalog(_ library: Library) -> [CatalogEntry<WorkflowDefStep>] {
+		catalog(predefined: Array(library.workflowSteps.values), custom: customWorkflowSteps, favorites: favoriteSteps)
+	}
+
+	public func chainCatalog(_ library: Library) -> [CatalogEntry<WorkflowChain>] {
+		catalog(predefined: Array(library.workflowChains.values), custom: customWorkflowChains, favorites: favoriteChains)
+	}
+
+	public func workflowDefCatalog(_ library: Library) -> [CatalogEntry<WorkflowDef>] {
+		catalog(predefined: Array(library.workflowDefinitions.values), custom: workflowDefinitions, favorites: favoriteWorkflowDefs)
+	}
+
+	// MARK: - Favorites
+
+	public func isFavorite(_ key: String, in keyPath: ReferenceWritableKeyPath<Design, [String]>) -> Bool {
+		self[keyPath: keyPath].contains(key)
+	}
+
+	public func toggleFavorite(_ key: String, in keyPath: ReferenceWritableKeyPath<Design, [String]>) {
+		if let idx = self[keyPath: keyPath].firstIndex(of: key) {
+			self[keyPath: keyPath].remove(at: idx)
+		} else {
+			self[keyPath: keyPath].append(key)
+		}
+	}
+
+	/// Idempotently marks a key as favorite. Used when creating or duplicating a
+	/// custom item so it surfaces at the top of pick lists immediately instead of
+	/// getting lost among the predefined items.
+	public func addFavorite(_ key: String, in keyPath: ReferenceWritableKeyPath<Design, [String]>) {
+		if !self[keyPath: keyPath].contains(key) {
+			self[keyPath: keyPath].append(key)
+		}
+	}
+
+	// MARK: - Custom item names
+
+	/// Returns a unique "<base> copy" name not used by any predefined or custom
+	/// item of the same type. Falls back to numbered suffixes on collision.
+	public func uniqueCopyName(base: String, existingKeys: Set<String>) -> String {
+		var candidate = "\(base) copy"
+		var n = 2
+		while existingKeys.contains(candidate) {
+			candidate = "\(base) copy \(n)"
+			n += 1
+		}
+		return candidate
+	}
+
+	// MARK: - Custom item CRUD (value types)
+
+	/// Inserts or replaces a custom hardware definition (matched by `processor`).
+	public func upsertCustomHardware(_ def: HardwareDef) {
+		customHardware.removeAll { $0.processor == def.processor }
+		customHardware.append(def)
+	}
+
+	public func removeCustomHardware(key: String) {
+		customHardware.removeAll { $0.processor == key }
+		favoriteHardware.removeAll { $0 == key }
+	}
+
+	/// Inserts or replaces a custom service definition (matched by `serviceType`).
+	public func upsertCustomServiceDef(_ def: ServiceDef) {
+		customServiceDefs.removeAll { $0.serviceType == def.serviceType }
+		customServiceDefs.append(def)
+	}
+
+	public func removeCustomServiceDef(key: String) {
+		customServiceDefs.removeAll { $0.serviceType == key }
+		favoriteServices.removeAll { $0 == key }
+		// If this service type was also in use, drop it and revalidate dependents.
+		if services[key] != nil {
+			services.removeValue(forKey: key)
+			updateServiceProviders()
+			updateWorkflowDefinitions()
+		}
+	}
+
+	/// Inserts or replaces a custom workflow step (matched by `name`).
+	public func upsertCustomWorkflowStep(_ step: WorkflowDefStep) {
+		customWorkflowSteps.removeAll { $0.name == step.name }
+		customWorkflowSteps.append(step)
+	}
+
+	public func removeCustomWorkflowStep(key: String) {
+		customWorkflowSteps.removeAll { $0.name == key }
+		favoriteSteps.removeAll { $0 == key }
+	}
+
+	// MARK: - Custom item CRUD (@Model: chains)
+	// The caller is responsible for inserting/deleting the @Model object in the
+	// SwiftData context (insert→save→append→save); these manage the relationship.
+
+	public func addCustomChain(_ chain: WorkflowChain) {
+		if customWorkflowChains.contains(chain) == false {
+			customWorkflowChains.append(chain)
+		}
+	}
+
+	public func removeCustomChain(_ chain: WorkflowChain) {
+		customWorkflowChains.removeAll { $0 == chain }
+		favoriteChains.removeAll { $0 == chain.name }
 	}
 	
 	public func printValidationMessages() {

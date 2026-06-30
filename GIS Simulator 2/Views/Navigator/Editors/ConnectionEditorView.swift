@@ -90,10 +90,10 @@ struct ConnectionEditorView: View {
             errorMessage = "Add zones before creating connections."
             return
         }
-        guard sourceIndex != destIndex else {
-            errorMessage = "Source and destination must be different zones."
-            return
-        }
+//        guard sourceIndex != destIndex else {
+//            errorMessage = "Source and destination must be different zones."
+//            return
+//        }
 
         let source = design.zones[sourceIndex]
         let dest = design.zones[destIndex]

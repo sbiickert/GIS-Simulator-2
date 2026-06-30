@@ -18,7 +18,7 @@ struct HardwareLibraryView: View {
     var body: some View {
         ValueCatalogManagerView(
             design: design,
-            title: "Hardware",
+            title: "Hardware Definitions",
             entries: design.hardwareCatalog(library),
             favoritePath: \.favoriteHardware,
             primary: { $0.processor },

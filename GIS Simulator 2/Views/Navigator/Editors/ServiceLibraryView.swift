@@ -18,7 +18,7 @@ struct ServiceLibraryView: View {
     var body: some View {
         ValueCatalogManagerView(
             design: design,
-            title: "Services",
+            title: "Service Definitions",
             entries: design.serviceCatalog(library),
             favoritePath: \.favoriteServices,
             primary: { $0.name },

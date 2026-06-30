@@ -439,13 +439,13 @@ private struct LibrarySection: View {
             NavigationLink {
                 HardwareLibraryView(design: design)
             } label: {
-                Label("Hardware", systemImage: "cpu")
+                Label("Hardware Definitions", systemImage: "cpu")
             }
             .isDetailLink(false)
             NavigationLink {
                 ServiceLibraryView(design: design)
             } label: {
-                Label("Services", systemImage: "square.stack.3d.up")
+                Label("Service Definitions", systemImage: "square.stack.3d.up")
             }
             .isDetailLink(false)
             NavigationLink {

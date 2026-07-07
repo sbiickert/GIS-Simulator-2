@@ -6,6 +6,17 @@
 import SwiftUI
 import SwiftData
 
+/// Leading indentation applied to a section's rows so the header's disclosure
+/// chevron stays the leftmost visual element, reinforcing the section→rows
+/// hierarchy. Padding (rather than `listRowInsets`) keeps the whole row tappable.
+private let sectionRowIndent: CGFloat = 20
+
+private extension View {
+    func indentedRow() -> some View {
+        padding(.leading, sectionRowIndent)
+    }
+}
+
 /// A pending delete confirmation, hoisted out of the list so swipe-to-delete
 /// row reconciliation cannot dismiss the dialog before the user responds.
 struct DeleteRequest: Identifiable {
@@ -28,7 +39,6 @@ struct DesignDetailView: View {
             ComputeSection(design: design, deleteRequest: $deleteRequest)
             ServicesSection(design: design, deleteRequest: $deleteRequest)
             ServiceProvidersSection(design: design, deleteRequest: $deleteRequest)
-            WorkflowDefsSection(design: design, deleteRequest: $deleteRequest)
             WorkflowsSection(design: design, deleteRequest: $deleteRequest)
             LibrarySection(design: design)
             ValidationSection(design: design)
@@ -65,7 +75,9 @@ private struct InfoSection: View {
     var body: some View {
         Section {
             TextField("Name", text: $design.name)
+                .indentedRow()
             TextField("Description", text: $design.desc)
+                .indentedRow()
         } header: {
             Text("Info")
                 .font(Font.title2.bold())
@@ -95,6 +107,7 @@ private struct ZonesSection: View {
                     }
                 }
                 .isDetailLink(false)
+                .indentedRow()
             }
             .onDelete { offsets in
                 let targets = offsets.map { design.zones[$0] }
@@ -107,7 +120,7 @@ private struct ZonesSection: View {
                 }
             }
         } header: {
-            SectionHeader(title: "Zones", isExpanded: $isExpanded, count: design.zones.count) {
+            SectionHeader(title: "Network Zones", isExpanded: $isExpanded, count: design.zones.count) {
                 ZoneEditorView(design: design)
             }
         }
@@ -136,6 +149,7 @@ private struct NetworkSection: View {
                     }
                 }
                 .isDetailLink(false)
+                .indentedRow()
             }
             .onDelete { offsets in
                 let targets = offsets.map { design.network[$0] }
@@ -148,7 +162,7 @@ private struct NetworkSection: View {
                 }
             }
         } header: {
-            SectionHeader(title: "Network", isExpanded: $isExpanded, count: design.network.count) {
+            SectionHeader(title: "Network Connections", isExpanded: $isExpanded, count: design.network.count) {
                 ConnectionEditorView(design: design)
             }
         }
@@ -177,6 +191,7 @@ private struct ComputeSection: View {
                     }
                 }
                 .isDetailLink(false)
+                .indentedRow()
             }
             .onDelete { offsets in
                 let targets = offsets.map { design.physicalComputeNodes[$0] }
@@ -225,6 +240,7 @@ private struct ServicesSection: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .indentedRow()
             }
             .onDelete { offsets in
                 let services = sortedServices
@@ -267,6 +283,7 @@ private struct ServiceProvidersSection: View {
                     }
                 }
                 .isDetailLink(false)
+                .indentedRow()
             }
             .onDelete { offsets in
                 let targets = offsets.map { design.serviceProviders[$0] }
@@ -288,91 +305,6 @@ private struct ServiceProvidersSection: View {
     private func spDetail(_ sp: ServiceProvider) -> String {
         let nodeNames = sp.nodes.map(\.name).joined(separator: ", ")
         return "\(sp.service.serviceType) on \(nodeNames.isEmpty ? "no nodes" : nodeNames)"
-    }
-}
-
-// MARK: - Workflow Defs
-
-private struct WorkflowDefsSection: View {
-    @Bindable var design: Design
-    @Binding var deleteRequest: DeleteRequest?
-    @Environment(\.modelContext) private var modelContext
-    @AppStorage("section.workflowDefs.expanded") private var isExpanded = true
-
-    var body: some View {
-        Section(isExpanded: $isExpanded) {
-            ForEach(design.workflowDefinitions, id: \.persistentModelID) { def in
-                NavigationLink {
-                    WorkflowChainEditorView(design: design, workflowDef: def)
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(def.name)
-                        wfDefSubtitle(def)
-                    }
-                }
-                .isDetailLink(false)
-                .swipeActions(edge: .trailing) {
-                    Button {
-                        duplicate(def)
-                    } label: {
-                        Label("Duplicate", systemImage: "plus.square.on.square")
-                    }
-                    .tint(.blue)
-                }
-            }
-            .onDelete { offsets in
-                let targets = offsets.map { design.workflowDefinitions[$0] }
-                deleteRequest = DeleteRequest(
-                    title: "Delete \(targets.count) workflow definition(s)?",
-                    message: "Workflows that use these definitions will also be removed."
-                ) {
-                    targets.forEach { design.removeWorkflowDefinition($0) }
-                    design.updateConfiguredWorkflows()
-                    try? modelContext.save()
-                }
-            }
-            NavigationLink {
-                WorkflowDefEditorView(design: design)
-            } label: {
-                Label("New Definition…", systemImage: "plus")
-            }
-            .isDetailLink(false)
-        } header: {
-            SectionHeader(title: "Workflow Definitions", isExpanded: $isExpanded, count: design.workflowDefinitions.count) {
-                WorkflowDefPickerView(design: design)
-            }
-        }
-    }
-
-    /// Creates an independent custom copy of a definition, including fresh copies
-    /// of its chains, and adds it to the design.
-    private func duplicate(_ def: WorkflowDef) {
-        let existing = Set(design.workflowDefinitions.map(\.name))
-        let name = design.uniqueCopyName(base: def.name, existingKeys: existing)
-        let chainCopies = def.chains.map {
-            WorkflowChain(name: $0.name, description: $0.desc, steps: $0.steps, serviceProviders: [:])
-        }
-        for chain in chainCopies { modelContext.insert(chain) }
-        let copy = WorkflowDef(name: name, desc: def.desc, thinkTimeSeconds: def.thinkTimeSeconds, chains: chainCopies)
-        modelContext.insert(copy)
-        try? modelContext.save()
-        design.workflowDefinitions.append(copy)
-        design.addFavorite(name, in: \.favoriteWorkflowDefs)
-        try? modelContext.save()
-    }
-
-    @ViewBuilder
-    private func wfDefSubtitle(_ def: WorkflowDef) -> some View {
-        let missing = def.missingServiceProviders
-        if missing.isEmpty {
-            Text("\(def.chains.count) chains, think time: \(def.thinkTimeSeconds)s")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else {
-            Text("Missing providers: \(missing.joined(separator: ", "))")
-                .font(.caption)
-                .foregroundStyle(.orange)
-        }
     }
 }
 
@@ -398,6 +330,7 @@ private struct WorkflowsSection: View {
                     }
                 }
                 .isDetailLink(false)
+                .indentedRow()
             }
             .onDelete { offsets in
                 let targets = offsets.map { design.allWorkflows[$0] }
@@ -442,24 +375,35 @@ private struct LibrarySection: View {
                 Label("Hardware Definitions", systemImage: "cpu")
             }
             .isDetailLink(false)
+            .indentedRow()
             NavigationLink {
                 ServiceLibraryView(design: design)
             } label: {
                 Label("Service Definitions", systemImage: "square.stack.3d.up")
             }
             .isDetailLink(false)
+            .indentedRow()
             NavigationLink {
                 StepLibraryView(design: design)
             } label: {
                 Label("Workflow Steps", systemImage: "list.bullet.rectangle")
             }
             .isDetailLink(false)
+            .indentedRow()
             NavigationLink {
                 ChainLibraryView(design: design)
             } label: {
                 Label("Workflow Chains", systemImage: "link")
             }
             .isDetailLink(false)
+            .indentedRow()
+            NavigationLink {
+                WorkflowDefLibraryView(design: design)
+            } label: {
+                Label("Workflow Definitions", systemImage: "flowchart")
+            }
+            .isDetailLink(false)
+            .indentedRow()
         } header: {
             Button {
                 withAnimation { isExpanded.toggle() }
@@ -490,6 +434,7 @@ private struct ValidationSection: View {
             if messages.isEmpty {
                 Label("Design is valid", systemImage: "checkmark.seal.fill")
                     .foregroundStyle(.green)
+                    .indentedRow()
             } else {
                 ForEach(Array(messages.enumerated()), id: \.offset) { _, msg in
                     Label {
@@ -503,6 +448,7 @@ private struct ValidationSection: View {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
                     }
+                    .indentedRow()
                 }
             }
         } header: {

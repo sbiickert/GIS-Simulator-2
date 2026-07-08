@@ -9,14 +9,16 @@ import SwiftUI
 import SwiftData
 
 /// Creates or edits a custom `ServiceDef` stored on the design. Predefined
-/// library services are read-only and reach this editor only via `duplicating`
-/// (which prefills an independent copy with a unique service type).
+/// library services are shown read-only via `viewing`, with a "Duplicate & Edit"
+/// button that turns the screen into an editable independent copy.
 struct ServiceDefEditorView: View {
     @Bindable var design: Design
     /// The custom item being edited, or `nil` when creating/duplicating.
     var editing: ServiceDef?
     /// A source item to prefill an independent copy from.
     var duplicating: ServiceDef?
+    /// A predefined item to display read-only until the user duplicates it.
+    var viewing: ServiceDef?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.library) private var library
@@ -28,8 +30,10 @@ struct ServiceDefEditorView: View {
     @State private var balancingModel: BalancingModel = .single
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
+    @State private var isEditingCopy = false
 
     private var isEditingCustom: Bool { editing != nil }
+    private var isReadOnly: Bool { viewing != nil && !isEditingCopy }
 
     var body: some View {
         Form {
@@ -41,6 +45,15 @@ struct ServiceDefEditorView: View {
                     ForEach(BalancingModel.allCases, id: \.self) { model in
                         Text(model.rawValue).tag(model)
                     }
+                }
+            }
+            .disabled(isReadOnly)
+            if isReadOnly {
+                Section {
+                    Button("Duplicate & Edit") { startEditingCopy() }
+                        .frame(maxWidth: .infinity)
+                } footer: {
+                    Text("Predefined services can't be changed. Duplicating creates an editable copy.")
                 }
             }
             if isEditingCustom {
@@ -62,11 +75,13 @@ struct ServiceDefEditorView: View {
         } message: {
             Text("If it is in use, it will also be removed from the design and its providers updated.")
         }
-        .navigationTitle(isEditingCustom ? "Edit Service" : "New Service")
+        .navigationTitle(isEditingCustom ? "Edit Service" : (isReadOnly ? "Service Details" : "New Service"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
+            if !isReadOnly {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                }
             }
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -78,7 +93,7 @@ struct ServiceDefEditorView: View {
     }
 
     private func loadInitial() {
-        if let def = editing {
+        if let def = editing ?? viewing {
             name = def.name
             serviceType = def.serviceType
             desc = def.desc
@@ -90,6 +105,16 @@ struct ServiceDefEditorView: View {
             desc = src.desc
             balancingModel = src.balancingModel
         }
+    }
+
+    /// Switches the read-only view of a predefined item into an editable
+    /// independent copy with a unique key; saving creates a new custom entry.
+    private func startEditingCopy() {
+        guard let src = viewing else { return }
+        let existing = Set(design.serviceCatalog(library).map(\.key))
+        name = "\(src.name) copy"
+        serviceType = design.uniqueCopyName(base: src.serviceType, existingKeys: existing)
+        isEditingCopy = true
     }
 
     private func save() {

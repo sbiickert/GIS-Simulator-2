@@ -94,51 +94,48 @@ public class Design: Described, Validatable {
 	
 	public func validate() -> [ValidationMessage] {
 		var messages = [ValidationMessage]()
-		
-		let allSPsValid = serviceProviders.allSatisfy(\.isValid)
-		let allZonesConnected = zones.allSatisfy {$0.isFullyConnected(in: network)}
-		let allWorkflowsValid = workflows.allSatisfy(\.isValid)
-		
+
+		let networkZones = Zone.allZones(in: network)
 		for w in allWorkflows {
 			for chain in w.definition.chains {
 				for sp in chain.serviceProviders.values {
 					for node in sp.nodes {
-						if Zone.allZones(in: network).contains(node.zone) == false {
-							messages.append(ValidationMessage(message: "Node \(node.name) is in zone \(node.zone.name) which is not in the network", source: sp.name))
+						if networkZones.contains(node.zone) == false {
+							messages.append(ValidationMessage(message: "Node \(node.name) is in zone \(node.zone.name) which is not in the network", source: sp.name, category: .serviceProviders, itemName: sp.name))
 						}
 					}
 				}
 			}
 		}
-		
-		if !allSPsValid {
-			messages.append(ValidationMessage(message: "One or more service providers are not valid", source: self.name))
+
+		for sp in serviceProviders {
+			messages.append(contentsOf: sp.validate())
 		}
-		if !allZonesConnected {
-			messages.append(ValidationMessage(message: "One or more zones are not fully connected", source: self.name))
+		for zone in zones where zone.isFullyConnected(in: network) == false {
+			messages.append(ValidationMessage(message: "Zone \(zone.name) is not fully connected", source: zone.name, category: .zones, itemName: zone.name))
 		}
-		if !allWorkflowsValid {
-			messages.append(ValidationMessage(message: "One or more workflows are not valid", source: self.name))
+		for w in workflows {
+			messages.append(contentsOf: w.validate())
 		}
 		if self.zones.isEmpty {
-			messages.append(ValidationMessage(message: "No zones have been added to this design", source: self.name))
+			messages.append(ValidationMessage(message: "No zones have been added to this design", source: self.name, category: .zones))
 		}
 		if self.network.isEmpty {
-			messages.append(ValidationMessage(message: "No network connections have been added to this design", source: self.name))
+			messages.append(ValidationMessage(message: "No network connections have been added to this design", source: self.name, category: .network))
 		}
 		if self.physicalComputeNodes.isEmpty {
-			messages.append(ValidationMessage(message: "No physical compute nodes have been added to this design", source: self.name))
+			messages.append(ValidationMessage(message: "No physical compute nodes have been added to this design", source: self.name, category: .compute))
 		}
 		if self.workflowDefinitions.isEmpty {
-			messages.append(ValidationMessage(message: "No workflow definitions have been added to this design", source: self.name))
+			messages.append(ValidationMessage(message: "No workflow definitions have been added to this design", source: self.name, category: .workflows))
 		}
 		if self.workflows.isEmpty {
-			messages.append(ValidationMessage(message: "No workflows have been configured", source: self.name))
+			messages.append(ValidationMessage(message: "No workflows have been configured", source: self.name, category: .workflows))
 		}
 		if self.services.isEmpty {
-			messages.append(ValidationMessage(message: "No services types have been configured", source: self.name))
+			messages.append(ValidationMessage(message: "No services types have been configured", source: self.name, category: .services))
 		}
-		
+
 		return messages
 	}
 	
@@ -480,22 +477,16 @@ public class Design: Described, Validatable {
 	
 	public func printValidationMessages() {
 		guard !isValid else { debugPrint("Design is valid."); return }
+		// validate() already includes per-service-provider and per-workflow
+		// messages; only chain-level detail needs to be added here.
 		for msg in validate() {
 			debugPrint(msg)
 		}
 		for w in workflows {
-			for msg in w.validate() {
-				debugPrint(msg)
-			}
 			for chain in w.definition.chains {
 				for msg in chain.validate() {
 					debugPrint(msg)
 				}
-			}
-		}
-		for sp in serviceProviders {
-			for msg in sp.validate() {
-				debugPrint(msg)
 			}
 		}
 	}

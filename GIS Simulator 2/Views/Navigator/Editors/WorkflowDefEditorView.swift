@@ -11,9 +11,13 @@ import SwiftData
 /// Creates or edits a custom `WorkflowDef` in the design by composing chains
 /// from the catalog. Each chain in a definition is an independent copy, so the
 /// definition owns its chains (matching how predefined definitions are added).
+/// Predefined definitions are shown read-only via `viewing`, with a
+/// "Duplicate & Edit" button that turns the screen into an editable copy.
 struct WorkflowDefEditorView: View {
     @Bindable var design: Design
     var editing: WorkflowDef?
+    /// A predefined item to display read-only until the user duplicates it.
+    var viewing: WorkflowDef?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.library) private var library
@@ -27,8 +31,11 @@ struct WorkflowDefEditorView: View {
     @State private var chains: [WorkflowChain] = []
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
+    @State private var isEditingCopy = false
+    @State private var hasLoaded = false
 
     private var isEditing: Bool { editing != nil }
+    private var isReadOnly: Bool { viewing != nil && !isEditingCopy }
 
     var body: some View {
         Form {
@@ -37,6 +44,7 @@ struct WorkflowDefEditorView: View {
                 TextField("Description", text: $desc)
                 Stepper("Think time: \(thinkTimeSeconds)s", value: $thinkTimeSeconds, in: 0...3_600)
             }
+            .disabled(isReadOnly)
             Section {
                 if chains.isEmpty {
                     Text("No chains yet")
@@ -52,18 +60,30 @@ struct WorkflowDefEditorView: View {
                     }
                     .onDelete { chains.remove(atOffsets: $0) }
                     .onMove { chains.move(fromOffsets: $0, toOffset: $1) }
+                    .deleteDisabled(isReadOnly)
+                    .moveDisabled(isReadOnly)
                 }
             } header: {
                 HStack {
                     Text("Chains")
                     Spacer()
-                    NavigationLink {
-                        ChainChooserView(design: design, chains: $chains)
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundStyle(.tint)
+                    if !isReadOnly {
+                        NavigationLink {
+                            ChainChooserView(design: design, chains: $chains)
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundStyle(.tint)
+                        }
+                        .isDetailLink(false)
                     }
-                    .isDetailLink(false)
+                }
+            }
+            if isReadOnly {
+                Section {
+                    Button("Duplicate & Edit") { startEditingCopy() }
+                        .frame(maxWidth: .infinity)
+                } footer: {
+                    Text("Predefined definitions can't be changed. Duplicating adds an editable copy to the design.")
                 }
             }
             if isEditing {
@@ -85,11 +105,13 @@ struct WorkflowDefEditorView: View {
         } message: {
             Text("Workflows that use this definition will also be removed.")
         }
-        .navigationTitle(isEditing ? "Edit Definition" : "New Definition")
+        .navigationTitle(isEditing ? "Edit Definition" : (isReadOnly ? "Definition Details" : "New Definition"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
+            if !isReadOnly {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                }
             }
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -101,12 +123,33 @@ struct WorkflowDefEditorView: View {
     }
 
     private func loadInitial() {
-        if let def = editing {
+        // onAppear fires again when a pushed picker pops; don't clobber edits.
+        guard !hasLoaded else { return }
+        hasLoaded = true
+        if let def = editing ?? viewing {
             name = def.name
             desc = def.desc
             thinkTimeSeconds = def.thinkTimeSeconds
             chains = def.chains
         }
+    }
+
+    /// Switches the read-only view of a predefined definition into an editable
+    /// copy. The chains are replaced with fresh, not-yet-inserted copies so the
+    /// library's own chain objects are never inserted into the design. Naming
+    /// matches the list's Duplicate action: keep the predefined name on first
+    /// copy, otherwise pick a unique one.
+    private func startEditingCopy() {
+        guard let src = viewing else { return }
+        let designNames = Set(design.workflowDefinitions.map(\.name))
+        let allKeys = Set(design.workflowDefCatalog(library).map(\.key))
+        name = designNames.contains(src.name)
+            ? design.uniqueCopyName(base: src.name, existingKeys: allKeys)
+            : src.name
+        chains = src.chains.map {
+            WorkflowChain(name: $0.name, description: $0.desc, steps: $0.steps, serviceProviders: [:])
+        }
+        isEditingCopy = true
     }
 
     private func save() {

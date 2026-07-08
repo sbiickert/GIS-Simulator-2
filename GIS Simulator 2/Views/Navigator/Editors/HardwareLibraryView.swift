@@ -33,6 +33,9 @@ struct HardwareLibraryView: View {
             onDelete: { design.removeCustomHardware(key: $0) },
             editor: { editing in
                 HardwareDefEditorView(design: design, editing: editing)
+            },
+            viewer: { item in
+                HardwareDefEditorView(design: design, viewing: item)
             }
         )
     }

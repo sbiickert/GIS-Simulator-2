@@ -39,6 +39,9 @@ struct WorkflowDefLibraryView: View {
                 } else {
                     WorkflowDefEditorView(design: design)
                 }
+            },
+            viewer: { item in
+                WorkflowDefEditorView(design: design, viewing: item)
             }
         )
     }

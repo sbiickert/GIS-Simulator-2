@@ -9,12 +9,15 @@ import SwiftUI
 import SwiftData
 
 /// Creates or edits a custom `WorkflowChain` (an ordered list of steps) stored
-/// on the design. Predefined library chains are read-only and reach this editor
-/// only via `duplicating`.
+/// on the design. Predefined library chains are shown read-only via `viewing`,
+/// with a "Duplicate & Edit" button that turns the screen into an editable
+/// independent copy.
 struct ChainEditorView: View {
     @Bindable var design: Design
     var editing: WorkflowChain?
     var duplicating: WorkflowChain?
+    /// A predefined item to display read-only until the user duplicates it.
+    var viewing: WorkflowChain?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.library) private var library
@@ -25,8 +28,11 @@ struct ChainEditorView: View {
     @State private var steps: [WorkflowDefStep] = []
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
+    @State private var isEditingCopy = false
+    @State private var hasLoaded = false
 
     private var isEditingCustom: Bool { editing != nil }
+    private var isReadOnly: Bool { viewing != nil && !isEditingCopy }
 
     var body: some View {
         Form {
@@ -34,6 +40,7 @@ struct ChainEditorView: View {
                 TextField("Name", text: $name)
                 TextField("Description", text: $desc)
             }
+            .disabled(isReadOnly)
             Section {
                 if steps.isEmpty {
                     Text("No steps yet")
@@ -49,18 +56,30 @@ struct ChainEditorView: View {
                     }
                     .onDelete { steps.remove(atOffsets: $0) }
                     .onMove { steps.move(fromOffsets: $0, toOffset: $1) }
+                    .deleteDisabled(isReadOnly)
+                    .moveDisabled(isReadOnly)
                 }
             } header: {
                 HStack {
                     Text("Steps")
                     Spacer()
-                    NavigationLink {
-                        StepChooserView(design: design, steps: $steps)
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundStyle(.tint)
+                    if !isReadOnly {
+                        NavigationLink {
+                            StepChooserView(design: design, steps: $steps)
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundStyle(.tint)
+                        }
+                        .isDetailLink(false)
                     }
-                    .isDetailLink(false)
+                }
+            }
+            if isReadOnly {
+                Section {
+                    Button("Duplicate & Edit") { startEditingCopy() }
+                        .frame(maxWidth: .infinity)
+                } footer: {
+                    Text("Predefined chains can't be changed. Duplicating creates an editable copy.")
                 }
             }
             if isEditingCustom {
@@ -82,11 +101,13 @@ struct ChainEditorView: View {
         } message: {
             Text("Workflow definitions that already include it keep their own copy.")
         }
-        .navigationTitle(isEditingCustom ? "Edit Chain" : "New Chain")
+        .navigationTitle(isEditingCustom ? "Edit Chain" : (isReadOnly ? "Chain Details" : "New Chain"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
+            if !isReadOnly {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                }
             }
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -98,7 +119,10 @@ struct ChainEditorView: View {
     }
 
     private func loadInitial() {
-        if let chain = editing {
+        // onAppear fires again when a pushed picker pops; don't clobber edits.
+        guard !hasLoaded else { return }
+        hasLoaded = true
+        if let chain = editing ?? viewing {
             name = chain.name
             desc = chain.desc
             steps = chain.steps
@@ -108,6 +132,15 @@ struct ChainEditorView: View {
             desc = src.desc
             steps = src.steps
         }
+    }
+
+    /// Switches the read-only view of a predefined item into an editable
+    /// independent copy with a unique name; saving creates a new custom entry.
+    private func startEditingCopy() {
+        guard let src = viewing else { return }
+        let existing = Set(design.chainCatalog(library).map(\.key))
+        name = design.uniqueCopyName(base: src.name, existingKeys: existing)
+        isEditingCopy = true
     }
 
     private func save() {

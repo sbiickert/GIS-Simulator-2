@@ -22,6 +22,7 @@ struct ComputeNodeEditorView: View {
     @State private var zoneIndex = 0
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
+    @State private var hasLoaded = false
 
     /// Hardware choices, favorites first (then alphabetical), merging the
     /// design's custom hardware with the predefined library.
@@ -138,6 +139,9 @@ struct ComputeNodeEditorView: View {
     }
 
     private func loadInitial() {
+        // onAppear fires again when a pushed VM editor pops; don't clobber edits.
+        guard !hasLoaded else { return }
+        hasLoaded = true
         if let node = editing {
             name = node.name
             desc = node.desc

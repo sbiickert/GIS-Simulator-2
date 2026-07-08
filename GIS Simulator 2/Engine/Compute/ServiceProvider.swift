@@ -125,10 +125,10 @@ public class ServiceProvider: Described, Validatable, Hashable, Codable {
 	public func validate() -> [ValidationMessage] {
 		var messages = Array<ValidationMessage>()
 		if self.nodes.isEmpty {
-			messages.append(.init(message: "Service provider \(self.name) has no compute nodes.", source: "ServiceProvider \(name)"))
+			messages.append(.init(message: "Service provider \(self.name) has no compute nodes.", source: "ServiceProvider \(name)", category: .serviceProviders, itemName: name))
 		}
 		if self.handlerNode == nil {
-			messages.append(.init(message: "Service provider \(self.name) handlerNode is nil.", source: "ServiceProvider \(name)"))
+			messages.append(.init(message: "Service provider \(self.name) handlerNode is nil.", source: "ServiceProvider \(name)", category: .serviceProviders, itemName: name))
 		}
 		return messages
 	}

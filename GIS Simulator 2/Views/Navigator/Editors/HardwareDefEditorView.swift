@@ -9,14 +9,16 @@ import SwiftUI
 import SwiftData
 
 /// Creates or edits a custom `HardwareDef` stored on the design. Predefined
-/// library hardware is read-only and reaches this editor only via `duplicating`
-/// (which prefills an independent copy with a unique name).
+/// library hardware is shown read-only via `viewing`, with a "Duplicate & Edit"
+/// button that turns the screen into an editable independent copy.
 struct HardwareDefEditorView: View {
     @Bindable var design: Design
     /// The custom item being edited, or `nil` when creating/duplicating.
     var editing: HardwareDef?
     /// A source item to prefill an independent copy from.
     var duplicating: HardwareDef?
+    /// A predefined item to display read-only until the user duplicates it.
+    var viewing: HardwareDef?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.library) private var library
@@ -27,8 +29,10 @@ struct HardwareDefEditorView: View {
     @State private var spec = 100.0
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
+    @State private var isEditingCopy = false
 
     private var isEditingCustom: Bool { editing != nil }
+    private var isReadOnly: Bool { viewing != nil && !isEditingCopy }
 
     var body: some View {
         Form {
@@ -39,6 +43,15 @@ struct HardwareDefEditorView: View {
                     TextField("SPEC", value: $spec, format: .number)
                         .multilineTextAlignment(.trailing)
                         .keyboardType(.decimalPad)
+                }
+            }
+            .disabled(isReadOnly)
+            if isReadOnly {
+                Section {
+                    Button("Duplicate & Edit") { startEditingCopy() }
+                        .frame(maxWidth: .infinity)
+                } footer: {
+                    Text("Predefined hardware can't be changed. Duplicating creates an editable copy.")
                 }
             }
             if isEditingCustom {
@@ -60,11 +73,13 @@ struct HardwareDefEditorView: View {
         } message: {
             Text("Compute nodes already using it keep their own copy.")
         }
-        .navigationTitle(isEditingCustom ? "Edit Hardware" : "New Hardware")
+        .navigationTitle(isEditingCustom ? "Edit Hardware" : (isReadOnly ? "Hardware Details" : "New Hardware"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
+            if !isReadOnly {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                }
             }
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -76,7 +91,7 @@ struct HardwareDefEditorView: View {
     }
 
     private func loadInitial() {
-        if let hw = editing {
+        if let hw = editing ?? viewing {
             processor = hw.processor
             cores = hw.cores
             spec = hw.specIntRate2017
@@ -86,6 +101,15 @@ struct HardwareDefEditorView: View {
             cores = src.cores
             spec = src.specIntRate2017
         }
+    }
+
+    /// Switches the read-only view of a predefined item into an editable
+    /// independent copy with a unique name; saving creates a new custom entry.
+    private func startEditingCopy() {
+        guard let src = viewing else { return }
+        let existing = Set(design.hardwareCatalog(library).map(\.key))
+        processor = design.uniqueCopyName(base: src.processor, existingKeys: existing)
+        isEditingCopy = true
     }
 
     private func save() {

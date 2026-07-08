@@ -9,11 +9,14 @@ import SwiftUI
 import SwiftData
 
 /// Creates or edits a custom `WorkflowDefStep` stored on the design. Predefined
-/// library steps are read-only and reach this editor only via `duplicating`.
+/// library steps are shown read-only via `viewing`, with a "Duplicate & Edit"
+/// button that turns the screen into an editable independent copy.
 struct WorkflowDefStepEditorView: View {
     @Bindable var design: Design
     var editing: WorkflowDefStep?
     var duplicating: WorkflowDefStep?
+    /// A predefined item to display read-only until the user duplicates it.
+    var viewing: WorkflowDefStep?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.library) private var library
@@ -30,8 +33,10 @@ struct WorkflowDefStepEditorView: View {
     @State private var cachePercent = 0
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
+    @State private var isEditingCopy = false
 
     private var isEditingCustom: Bool { editing != nil }
+    private var isReadOnly: Bool { viewing != nil && !isEditingCopy }
 
     /// Service types the step may reference: the design's catalog keys, plus the
     /// step's current value so an existing reference is never silently dropped.
@@ -51,6 +56,7 @@ struct WorkflowDefStepEditorView: View {
                     ForEach(serviceTypeOptions, id: \.self) { Text($0).tag($0) }
                 }
             }
+            .disabled(isReadOnly)
             Section("Timing & Sizing") {
                 Stepper("Service time: \(serviceTime) ms", value: $serviceTime, in: 0...600_000, step: 10)
                 Stepper("Chatter: \(chatter)", value: $chatter, in: 1...1_000)
@@ -65,11 +71,21 @@ struct WorkflowDefStepEditorView: View {
                         .keyboardType(.numberPad)
                 }
             }
+            .disabled(isReadOnly)
             Section("Data") {
                 Picker("Data source", selection: $dataSourceType) {
                     ForEach(DataSourceType.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 Stepper("Cache: \(cachePercent)%", value: $cachePercent, in: 0...100, step: 5)
+            }
+            .disabled(isReadOnly)
+            if isReadOnly {
+                Section {
+                    Button("Duplicate & Edit") { startEditingCopy() }
+                        .frame(maxWidth: .infinity)
+                } footer: {
+                    Text("Predefined steps can't be changed. Duplicating creates an editable copy.")
+                }
             }
             if isEditingCustom {
                 Section {
@@ -90,11 +106,13 @@ struct WorkflowDefStepEditorView: View {
         } message: {
             Text("Chains that already include it keep their own copy.")
         }
-        .navigationTitle(isEditingCustom ? "Edit Step" : "New Step")
+        .navigationTitle(isEditingCustom ? "Edit Step" : (isReadOnly ? "Step Details" : "New Step"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
+            if !isReadOnly {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                }
             }
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -106,13 +124,13 @@ struct WorkflowDefStepEditorView: View {
     }
 
     private func loadInitial() {
-        let source = editing ?? duplicating
+        let source = editing ?? viewing ?? duplicating
         guard let step = source else { return }
-        if editing != nil {
-            name = step.name
-        } else {
+        if duplicating != nil {
             let existing = Set(design.stepCatalog(library).map(\.key))
             name = design.uniqueCopyName(base: step.name, existingKeys: existing)
+        } else {
+            name = step.name
         }
         desc = step.desc
         serviceType = step.serviceType
@@ -122,6 +140,15 @@ struct WorkflowDefStepEditorView: View {
         responseSizeKB = step.responseSizeKB
         dataSourceType = step.dataSourceType
         cachePercent = step.cachePercent
+    }
+
+    /// Switches the read-only view of a predefined item into an editable
+    /// independent copy with a unique name; saving creates a new custom entry.
+    private func startEditingCopy() {
+        guard let src = viewing else { return }
+        let existing = Set(design.stepCatalog(library).map(\.key))
+        name = design.uniqueCopyName(base: src.name, existingKeys: existing)
+        isEditingCopy = true
     }
 
     private func save() {

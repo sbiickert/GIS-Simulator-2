@@ -10,9 +10,10 @@ import SwiftData
 
 /// A reusable management list for a value-type library catalog (predefined ∪
 /// custom). Each row can be favorited; custom rows are editable/deletable while
-/// predefined rows are copy-only. "Duplicate" creates an independent copy with a
-/// unique name. Used for hardware, services, and workflow steps.
-struct ValueCatalogManagerView<Item: LibraryItem, Editor: View>: View {
+/// predefined rows open a read-only detail view offering "Duplicate & Edit".
+/// "Duplicate" creates an independent copy with a unique name. Used for
+/// hardware, services, and workflow steps.
+struct ValueCatalogManagerView<Item: LibraryItem, Editor: View, Viewer: View>: View {
     @Bindable var design: Design
     let title: String
     let entries: [CatalogEntry<Item>]
@@ -22,6 +23,7 @@ struct ValueCatalogManagerView<Item: LibraryItem, Editor: View>: View {
     let onDuplicate: (Item) -> Void
     let onDelete: (String) -> Void
     @ViewBuilder let editor: (_ editing: Item?) -> Editor
+    @ViewBuilder let viewer: (_ item: Item) -> Viewer
 
     @Environment(\.modelContext) private var modelContext
     @State private var deleteKey: String?
@@ -96,18 +98,16 @@ struct ValueCatalogManagerView<Item: LibraryItem, Editor: View>: View {
             }
         }
 
-        Group {
+        NavigationLink {
             if entry.isCustom {
-                NavigationLink {
-                    editor(entry.item)
-                } label: {
-                    label
-                }
-                .isDetailLink(false)
+                editor(entry.item)
             } else {
-                label
+                viewer(entry.item)
             }
+        } label: {
+            label
         }
+        .isDetailLink(false)
         .swipeActions(edge: .trailing) {
             if entry.isCustom {
                 Button("Delete", role: .destructive) { deleteKey = entry.key }

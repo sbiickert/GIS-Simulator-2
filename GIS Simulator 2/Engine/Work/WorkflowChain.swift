@@ -60,11 +60,11 @@ public class WorkflowChain: Described, Validatable, Codable {
 		var messages: [ValidationMessage] = []
 		
 		if hasDuplicateServiceProviders {
-			messages.append(ValidationMessage(message: "Duplicate service providers found", source: name))
+			messages.append(ValidationMessage(message: "Duplicate service providers found", source: name, category: .workflows))
 		}
 		if missingServiceProviders.isEmpty == false {
 			messages.append(contentsOf: missingServiceProviders.map({
-				ValidationMessage(message: "Missing service provider for \($0)", source: name)
+				ValidationMessage(message: "Missing service provider for \($0)", source: name, category: .workflows)
 			}))
 		}
 		

@@ -17,6 +17,35 @@ private extension View {
     }
 }
 
+private extension Array where Element == ValidationMessage {
+    /// Number of messages attributed to a specific row's item.
+    func count(forItem name: String) -> Int {
+        filter { $0.itemName == name }.count
+    }
+}
+
+/// An orange capsule showing how many validation errors apply to one row.
+/// Renders nothing when the count is zero so valid rows stay uncluttered.
+struct RowErrorBadge: View {
+    let count: Int
+
+    var body: some View {
+        if count > 0 {
+            HStack(spacing: 3) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                Text("\(count)")
+                    .font(.footnote.weight(.semibold))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(.orange, in: Capsule())
+        }
+    }
+}
+
 /// A pending delete confirmation, hoisted out of the list so swipe-to-delete
 /// row reconciliation cannot dismiss the dialog before the user responds.
 struct DeleteRequest: Identifiable {
@@ -32,16 +61,25 @@ struct DesignDetailView: View {
     @State private var deleteRequest: DeleteRequest?
 
     var body: some View {
+        // Validate once per render; each section receives its own slice so
+        // headers can show error counts and rows can badge individual items.
+        let messages = design.validate()
         Form {
             InfoSection(design: design)
-            ZonesSection(design: design, deleteRequest: $deleteRequest)
-            NetworkSection(design: design, deleteRequest: $deleteRequest)
-            ComputeSection(design: design, deleteRequest: $deleteRequest)
-            ServicesSection(design: design, deleteRequest: $deleteRequest)
-            ServiceProvidersSection(design: design, deleteRequest: $deleteRequest)
-            WorkflowsSection(design: design, deleteRequest: $deleteRequest)
+            ZonesSection(design: design, deleteRequest: $deleteRequest,
+                         errors: messages.filter { $0.category == .zones })
+            NetworkSection(design: design, deleteRequest: $deleteRequest,
+                           errors: messages.filter { $0.category == .network })
+            ComputeSection(design: design, deleteRequest: $deleteRequest,
+                           errors: messages.filter { $0.category == .compute })
+            ServicesSection(design: design, deleteRequest: $deleteRequest,
+                            errors: messages.filter { $0.category == .services })
+            ServiceProvidersSection(design: design, deleteRequest: $deleteRequest,
+                                    errors: messages.filter { $0.category == .serviceProviders })
+            WorkflowsSection(design: design, deleteRequest: $deleteRequest,
+                             errors: messages.filter { $0.category == .workflows })
             LibrarySection(design: design)
-            ValidationSection(design: design)
+            ValidationSection(messages: messages)
         }
         .navigationTitle(design.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -90,6 +128,7 @@ private struct InfoSection: View {
 private struct ZonesSection: View {
     @Bindable var design: Design
     @Binding var deleteRequest: DeleteRequest?
+    let errors: [ValidationMessage]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("section.zones.expanded") private var isExpanded = true
 
@@ -99,11 +138,15 @@ private struct ZonesSection: View {
                 NavigationLink {
                     ZoneEditorView(design: design, editing: zone)
                 } label: {
-                    VStack(alignment: .leading) {
-                        Text(zone.name)
-                        Text(zone.desc)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(zone.name)
+                            Text(zone.desc)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        RowErrorBadge(count: errors.count(forItem: zone.name))
                     }
                 }
                 .isDetailLink(false)
@@ -120,7 +163,7 @@ private struct ZonesSection: View {
                 }
             }
         } header: {
-            SectionHeader(title: "Network Zones", isExpanded: $isExpanded, count: design.zones.count) {
+            SectionHeader(title: "Network Zones", isExpanded: $isExpanded, count: design.zones.count, errorCount: errors.count) {
                 ZoneEditorView(design: design)
             }
         }
@@ -132,6 +175,7 @@ private struct ZonesSection: View {
 private struct NetworkSection: View {
     @Bindable var design: Design
     @Binding var deleteRequest: DeleteRequest?
+    let errors: [ValidationMessage]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("section.network.expanded") private var isExpanded = true
 
@@ -141,11 +185,15 @@ private struct NetworkSection: View {
                 NavigationLink {
                     ConnectionEditorView(design: design, editing: conn)
                 } label: {
-                    VStack(alignment: .leading) {
-                        Text(conn.name)
-                        Text("\(conn.bandwidthMbps) Mbps, \(conn.latencyMs) ms latency")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(conn.name)
+                            Text("\(conn.bandwidthMbps) Mbps, \(conn.latencyMs) ms latency")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        RowErrorBadge(count: errors.count(forItem: conn.name))
                     }
                 }
                 .isDetailLink(false)
@@ -162,7 +210,7 @@ private struct NetworkSection: View {
                 }
             }
         } header: {
-            SectionHeader(title: "Network Connections", isExpanded: $isExpanded, count: design.network.count) {
+            SectionHeader(title: "Network Connections", isExpanded: $isExpanded, count: design.network.count, errorCount: errors.count) {
                 ConnectionEditorView(design: design)
             }
         }
@@ -174,6 +222,7 @@ private struct NetworkSection: View {
 private struct ComputeSection: View {
     @Bindable var design: Design
     @Binding var deleteRequest: DeleteRequest?
+    let errors: [ValidationMessage]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("section.compute.expanded") private var isExpanded = true
 
@@ -183,11 +232,15 @@ private struct ComputeSection: View {
                 NavigationLink {
                     ComputeNodeEditorView(design: design, editing: node)
                 } label: {
-                    VStack(alignment: .leading) {
-                        Text(node.name)
-                        Text(computeDetail(node))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(node.name)
+                            Text(computeDetail(node))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        RowErrorBadge(count: errors.count(forItem: node.name))
                     }
                 }
                 .isDetailLink(false)
@@ -204,7 +257,7 @@ private struct ComputeSection: View {
                 }
             }
         } header: {
-            SectionHeader(title: "Compute", isExpanded: $isExpanded, count: design.physicalComputeNodes.count) {
+            SectionHeader(title: "Compute", isExpanded: $isExpanded, count: design.physicalComputeNodes.count, errorCount: errors.count) {
                 ComputeNodeEditorView(design: design)
             }
         }
@@ -224,6 +277,7 @@ private struct ComputeSection: View {
 private struct ServicesSection: View {
     @Bindable var design: Design
     @Binding var deleteRequest: DeleteRequest?
+    let errors: [ValidationMessage]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("section.services.expanded") private var isExpanded = true
 
@@ -234,11 +288,15 @@ private struct ServicesSection: View {
     var body: some View {
         Section(isExpanded: $isExpanded) {
             ForEach(sortedServices, id: \.serviceType) { def in
-                VStack(alignment: .leading) {
-                    Text(def.name)
-                    Text("\(def.serviceType) - \(def.balancingModel.rawValue)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(def.name)
+                        Text("\(def.serviceType) - \(def.balancingModel.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    RowErrorBadge(count: errors.count(forItem: def.serviceType))
                 }
                 .indentedRow()
             }
@@ -254,7 +312,7 @@ private struct ServicesSection: View {
                 }
             }
         } header: {
-            SectionHeader(title: "Services", isExpanded: $isExpanded, count: sortedServices.count) {
+            SectionHeader(title: "Services", isExpanded: $isExpanded, count: sortedServices.count, errorCount: errors.count) {
                 ServiceDefPickerView(design: design)
             }
         }
@@ -266,6 +324,7 @@ private struct ServicesSection: View {
 private struct ServiceProvidersSection: View {
     @Bindable var design: Design
     @Binding var deleteRequest: DeleteRequest?
+    let errors: [ValidationMessage]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("section.serviceProviders.expanded") private var isExpanded = true
 
@@ -275,11 +334,15 @@ private struct ServiceProvidersSection: View {
                 NavigationLink {
                     ServiceProviderEditorView(design: design, editing: sp)
                 } label: {
-                    VStack(alignment: .leading) {
-                        Text(sp.name)
-                        Text(spDetail(sp))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(sp.name)
+                            Text(spDetail(sp))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        RowErrorBadge(count: errors.count(forItem: sp.name))
                     }
                 }
                 .isDetailLink(false)
@@ -296,7 +359,7 @@ private struct ServiceProvidersSection: View {
                 }
             }
         } header: {
-            SectionHeader(title: "Service Providers", isExpanded: $isExpanded, count: design.serviceProviders.count) {
+            SectionHeader(title: "Service Providers", isExpanded: $isExpanded, count: design.serviceProviders.count, errorCount: errors.count) {
                 ServiceProviderEditorView(design: design)
             }
         }
@@ -313,6 +376,7 @@ private struct ServiceProvidersSection: View {
 private struct WorkflowsSection: View {
     @Bindable var design: Design
     @Binding var deleteRequest: DeleteRequest?
+    let errors: [ValidationMessage]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("section.workflows.expanded") private var isExpanded = true
 
@@ -322,11 +386,15 @@ private struct WorkflowsSection: View {
                 NavigationLink {
                     WorkflowEditorView(design: design, editing: wf)
                 } label: {
-                    VStack(alignment: .leading) {
-                        Text(wf.name)
-                        Text(workflowDetail(wf))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(wf.name)
+                            Text(workflowDetail(wf))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        RowErrorBadge(count: errors.count(forItem: wf.name))
                     }
                 }
                 .isDetailLink(false)
@@ -343,7 +411,7 @@ private struct WorkflowsSection: View {
                 }
             }
         } header: {
-            SectionHeader(title: "Workflows", isExpanded: $isExpanded, count: design.allWorkflows.count) {
+            SectionHeader(title: "Workflows", isExpanded: $isExpanded, count: design.allWorkflows.count, errorCount: errors.count) {
                 WorkflowEditorView(design: design)
             }
         }
@@ -426,11 +494,10 @@ private struct LibrarySection: View {
 // MARK: - Validation
 
 private struct ValidationSection: View {
-    let design: Design
+    let messages: [ValidationMessage]
 
     var body: some View {
         Section {
-            let messages = design.validate()
             if messages.isEmpty {
                 Label("Design is valid", systemImage: "checkmark.seal.fill")
                     .foregroundStyle(.green)
@@ -468,6 +535,9 @@ struct SectionHeader<Destination: View>: View {
     /// When supplied, the header shows the item count as a badge so the user
     /// can gauge a section's size without expanding it.
     var count: Int? = nil
+    /// Number of validation errors attributed to this section. When greater
+    /// than zero, an orange badge flags the section even while collapsed.
+    var errorCount: Int? = nil
     @ViewBuilder var destination: () -> Destination
 
     var body: some View {
@@ -484,6 +554,7 @@ struct SectionHeader<Destination: View>: View {
                         Text(title)
                             .font(Font.title2.bold())
                         countBadge
+                        RowErrorBadge(count: errorCount ?? 0)
                     }
                     .contentShape(Rectangle())
                 }
@@ -493,6 +564,7 @@ struct SectionHeader<Destination: View>: View {
                     Text(title)
                         .font(Font.title2.bold())
                     countBadge
+                    RowErrorBadge(count: errorCount ?? 0)
                 }
             }
             Spacer()

@@ -35,6 +35,9 @@ struct ServiceLibraryView: View {
             onDelete: { design.removeCustomServiceDef(key: $0) },
             editor: { editing in
                 ServiceDefEditorView(design: design, editing: editing)
+            },
+            viewer: { item in
+                ServiceDefEditorView(design: design, viewing: item)
             }
         )
     }

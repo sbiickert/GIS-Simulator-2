@@ -35,6 +35,9 @@ struct StepLibraryView: View {
             onDelete: { design.removeCustomWorkflowStep(key: $0) },
             editor: { editing in
                 WorkflowDefStepEditorView(design: design, editing: editing)
+            },
+            viewer: { item in
+                WorkflowDefStepEditorView(design: design, viewing: item)
             }
         )
     }

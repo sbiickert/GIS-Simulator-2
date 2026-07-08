@@ -120,16 +120,16 @@ public class Workflow: Described, Validatable, Hashable, Codable {
 		var result = [ValidationMessage]()
 		
 		if definition.chains.isEmpty {
-			result.append(ValidationMessage(message: "Workflow must have at least one chain.", source: self.name))
+			result.append(ValidationMessage(message: "Workflow must have at least one chain.", source: self.name, category: .workflows, itemName: self.name))
 		}
-		
+
 		let invalidChains = definition.chains.filter({$0.isValid == false})
 		for chain in invalidChains {
-			result.append(ValidationMessage(message: "Workflow chain \(chain.name) is invalid.", source: self.name))
+			result.append(ValidationMessage(message: "Workflow chain \(chain.name) is invalid.", source: self.name, category: .workflows, itemName: self.name))
 		}
-		
+
 		if transactionRate <= 0 {
-			result.append(ValidationMessage(message: "Transaction rate must be greater than 0.", source: self.name))
+			result.append(ValidationMessage(message: "Transaction rate must be greater than 0.", source: self.name, category: .workflows, itemName: self.name))
 		}
 		
 		return result

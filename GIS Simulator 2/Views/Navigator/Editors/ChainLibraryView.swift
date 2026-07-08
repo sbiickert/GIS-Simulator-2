@@ -41,6 +41,9 @@ struct ChainLibraryView: View {
             },
             editor: { editing in
                 ChainEditorView(design: design, editing: editing)
+            },
+            viewer: { item in
+                ChainEditorView(design: design, viewing: item)
             }
         )
     }

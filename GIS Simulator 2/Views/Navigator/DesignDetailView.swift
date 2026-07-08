@@ -83,7 +83,12 @@ struct DesignDetailView: View {
         }
         .navigationTitle(design.name)
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { focus.currentDesign = design }
+        .onAppear {
+            focus.currentDesign = design
+            // Heal chain→provider references (re-points stale copies to the
+            // design's own providers and prunes ones that no longer exist).
+            design.updateWorkflowDefinitions()
+        }
         // Attached to the Form (not a Section) so it survives the swipe-delete
         // row animation and is not auto-dismissed by list reconciliation.
         .confirmationDialog(

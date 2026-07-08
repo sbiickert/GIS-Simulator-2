@@ -9,16 +9,7 @@ import Foundation
 import SwiftData
 
 @Model
-public class ServiceProvider: Described, Validatable, Hashable, Codable {
-	enum CodingKeys: CodingKey {
-		case name
-		case desc
-		case service
-		case tags
-		case nodes
-		case primary
-	}
-	
+public class ServiceProvider: Described, Validatable {
 	public var name: String
 	public var desc: String
 	public var service: ServiceDef
@@ -33,26 +24,6 @@ public class ServiceProvider: Described, Validatable, Hashable, Codable {
 		self.nodes = nodes
 		self.tags = tags
 		self._primary = _primary
-	}
-	
-	required public init(from decoder: Decoder) throws {
-		let container = try decoder.container(keyedBy: CodingKeys.self)
-		name = try container.decode(String.self, forKey: .name)
-		desc = try container.decode(String.self, forKey: .desc)
-		service = try container.decode(ServiceDef.self, forKey: .service)
-		tags = try container.decode(Set.self, forKey: .tags)
-		nodes = try container.decode(Array.self, forKey: .nodes)
-		_primary = try container.decode(Int.self, forKey: .primary)
-	}
-	
-	public func encode(to encoder: Encoder) throws {
-		var container = encoder.container(keyedBy: CodingKeys.self)
-		try container.encode(name, forKey: .name)
-		try container.encode(desc, forKey: .desc)
-		try container.encode(service, forKey: .service)
-		try container.encode(tags, forKey: .tags)
-		try container.encode(nodes, forKey: .nodes)
-		try container.encode(_primary, forKey: .primary)
 	}
 
 	public var primary: Int {
@@ -132,14 +103,4 @@ public class ServiceProvider: Described, Validatable, Hashable, Codable {
 		}
 		return messages
 	}
-	
-	public static func == (lhs: ServiceProvider, rhs: ServiceProvider) -> Bool {
-		return lhs.name == rhs.name && lhs.service == rhs.service
-	}
-	
-	public func hash(into hasher: inout Hasher) {
-		hasher.combine(name)
-		hasher.combine(service)
-	}
-	
 }

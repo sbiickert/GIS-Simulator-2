@@ -15,17 +15,7 @@ public nonisolated enum WorkflowType: String, CaseIterable, Codable {
 }
 
 @Model
-public class Workflow: Described, Validatable, Hashable, Codable {
-	enum CodingKeys: CodingKey {
-		case name
-		case desc
-		case def
-		case type
-		case userCount
-		case productivity
-		case tph
-	}
-	
+public class Workflow: Described, Validatable {
 	public var name: String
 	public var desc: String
 	public var definition: WorkflowDef
@@ -44,38 +34,7 @@ public class Workflow: Described, Validatable, Hashable, Codable {
 		self.productivity = productivity
 		self.tph = tph
 	}
-	
-	required public init(from decoder: Decoder) throws {
-		let container = try decoder.container(keyedBy: CodingKeys.self)
-		name = try container.decode(String.self, forKey: .name)
-		desc = try container.decode(String.self, forKey: .desc)
-		definition = try container.decode(WorkflowDef.self, forKey: .def)
-		type = try container.decode(WorkflowType.self, forKey: .type)
-		userCount = try container.decode(Int.self, forKey: .userCount)
-		productivity = try container.decode(Int.self, forKey: .productivity)
-		tph = try container.decode(Int.self, forKey: .tph)
-	}
-	
-	public func encode(to encoder: Encoder) throws {
-		var container = encoder.container(keyedBy: CodingKeys.self)
-		try container.encode(name, forKey: .name)
-		try container.encode(desc, forKey: .desc)
-		try container.encode(definition, forKey: .def)
-		try container.encode(type, forKey: .type)
-		try container.encode(userCount, forKey: .userCount)
-		try container.encode(productivity, forKey: .productivity)
-		try container.encode(tph, forKey: .tph)
-	}
 
-	public static func == (lhs: Workflow, rhs: Workflow) -> Bool {
-		return lhs.name == rhs.name && lhs.definition == rhs.definition
-	}
-	
-	public func hash(into hasher: inout Hasher) {
-		hasher.combine(name)
-		hasher.combine(definition)
-	}
-	
 	public var transactionRate: Int {
 		switch type {
 		case .user:

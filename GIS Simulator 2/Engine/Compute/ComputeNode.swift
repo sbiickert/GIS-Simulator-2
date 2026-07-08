@@ -15,26 +15,7 @@ public nonisolated enum ComputeNodeType: String, CaseIterable, Codable {
 }
 
 @Model
-public nonisolated class ComputeNode: Described, Hashable, ServiceTimeCalculator, Codable {
-	enum CodingKeys: CodingKey {
-		case name
-		case desc
-		case hw
-		case memory
-		case zone
-		case type
-		case threading
-	}
-	
-	public static func == (lhs: ComputeNode, rhs: ComputeNode) -> Bool {
-		return lhs.name == rhs.name && lhs.type == rhs.type
-	}
-	
-	public func hash(into hasher: inout Hasher) {
-		hasher.combine(name)
-		hasher.combine(type)
-	}
-	
+public nonisolated class ComputeNode: Described, ServiceTimeCalculator {
 	public var name: String
 	public var desc: String
 	public var hwDef: HardwareDef
@@ -60,28 +41,6 @@ public nonisolated class ComputeNode: Described, Hashable, ServiceTimeCalculator
 		self.zone = zone
 		self.type = type
 		self.threading = type == .client ? .physical : .hyperThreaded
-	}
-	
-	required public init(from decoder: Decoder) throws {
-		let container = try decoder.container(keyedBy: CodingKeys.self)
-		name = try container.decode(String.self, forKey: .name)
-		desc = try container.decode(String.self, forKey: .desc)
-		hwDef = try container.decode(HardwareDef.self, forKey: .hw)
-		memoryGB = try container.decode(Int.self, forKey: .memory)
-		zone = try container.decode(Zone.self, forKey: .zone)
-		type = try container.decode(ComputeNodeType.self, forKey: .type)
-		threading = try container.decode(ThreadingModel.self, forKey: .threading)
-	}
-	
-	public func encode(to encoder: Encoder) throws {
-		var container = encoder.container(keyedBy: CodingKeys.self)
-		try container.encode(name, forKey: .name)
-		try container.encode(desc, forKey: .desc)
-		try container.encode(hwDef, forKey: .hw)
-		try container.encode(memoryGB, forKey: .memory)
-		try container.encode(zone, forKey: .zone)
-		try container.encode(type, forKey: .type)
-		try container.encode(threading, forKey: .threading)
 	}
 
 	public var vCores: Int {

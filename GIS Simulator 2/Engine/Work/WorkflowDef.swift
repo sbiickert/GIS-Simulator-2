@@ -9,14 +9,7 @@ import Foundation
 import SwiftData
 
 @Model
-public class WorkflowDef: Described, Hashable, Codable {
-	enum CodingKeys: CodingKey {
-		case name
-		case desc
-		case think
-		case chains
-	}
-	
+public class WorkflowDef: Described {
 	public var name: String
 	public var desc: String
 	public var thinkTimeSeconds: Int
@@ -28,31 +21,7 @@ public class WorkflowDef: Described, Hashable, Codable {
 		self.thinkTimeSeconds = thinkTimeSeconds
 		self.chains = chains
 	}
-	
-	required public init(from decoder: Decoder) throws {
-		let container = try decoder.container(keyedBy: CodingKeys.self)
-		name = try container.decode(String.self, forKey: .name)
-		desc = try container.decode(String.self, forKey: .desc)
-		thinkTimeSeconds = try container.decode(Int.self, forKey: .think)
-		chains = try container.decode(Array.self, forKey: .chains)
-	}
-	
-	public func encode(to encoder: Encoder) throws {
-		var container = encoder.container(keyedBy: CodingKeys.self)
-		try container.encode(name, forKey: .name)
-		try container.encode(desc, forKey: .desc)
-		try container.encode(thinkTimeSeconds, forKey: .think)
-		try container.encode(chains, forKey: .chains)
-	}
 
-	public static func == (lhs: WorkflowDef, rhs: WorkflowDef) -> Bool {
-		lhs.name == rhs.name
-	}
-	
-	public func hash(into hasher: inout Hasher) {
-		hasher.combine(name)
-	}
-	
 	public func add(chain: WorkflowChain) {
 		chains = [chain] + chains
 	}

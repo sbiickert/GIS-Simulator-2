@@ -279,21 +279,27 @@ public class Design: Described, Validatable {
 		- A ComputeNode has been removed
 		*/
 		var remaining = [ServiceProvider]()
-		
+
 		for sp in serviceProviders {
-			if services.values.contains(sp.service) { remaining.append(sp) }
+			// Match by service type key: sp.service is a value copy, so comparing
+			// whole ServiceDef values would drop the provider whenever the
+			// definition is edited. Refresh the copy while we're here.
+			if let current = services[sp.service.serviceType] {
+				sp.service = current
+				remaining.append(sp)
+			}
 		}
-		
+
 		let allNodes = allComputeNodes
-		
+
 		for sp in remaining {
 			var remainingNodes: [ComputeNode] = []
 			for node in sp.nodes {
-				if allNodes.contains(node) { remainingNodes.append(node) }
+				if allNodes.contains(where: { $0 === node }) { remainingNodes.append(node) }
 			}
 			sp.nodes = remainingNodes
 		}
-		
+
 		serviceProviders = remaining
 	}
 	
@@ -306,8 +312,15 @@ public class Design: Described, Validatable {
 			for chain in wdef.chains {
 				var remaining: Dictionary<String, ServiceProvider> = [:]
 				for sp in chain.serviceProviders.values {
-					if self.serviceProviders.contains(sp) {
+					if self.serviceProviders.contains(where: { $0 === sp }) {
 						remaining[sp.service.serviceType] = sp
+					} else if let canonical = self.serviceProviders.first(where: {
+						$0.name == sp.name && $0.service.serviceType == sp.service.serviceType
+					}) {
+						// Heal a stale reference (e.g. a copy left over from data
+						// created before chains held real relationships) by
+						// re-pointing to the design's own provider.
+						remaining[canonical.service.serviceType] = canonical
 					}
 				}
 				chain.serviceProviders = remaining

@@ -9,19 +9,26 @@ import Foundation
 import SwiftData
 
 @Model
-public class WorkflowChain: Described, Validatable, Codable {
-	enum CodingKeys: CodingKey {
-		case name
-		case desc
-		case steps
-		case sps
-	}
-	
+public class WorkflowChain: Described, Validatable {
 	public var name: String
 	public var desc: String
 	public var steps: [WorkflowDefStep]
-	public var serviceProviders: Dictionary<String, ServiceProvider>
-	
+	// Persisted as a real relationship so the chain references the design's own
+	// ServiceProvider objects. Storing them in a dictionary attribute would make
+	// SwiftData persist encoded copies, severing object identity on reload.
+	@Relationship private var _serviceProviders: [ServiceProvider] = []
+
+	/// Dictionary-style access to the chain's providers, keyed by service type.
+	public var serviceProviders: Dictionary<String, ServiceProvider> {
+		get {
+			Dictionary(_serviceProviders.map { ($0.service.serviceType, $0) },
+					   uniquingKeysWith: { first, _ in first })
+		}
+		set {
+			_serviceProviders = Array(newValue.values)
+		}
+	}
+
 	public init(name: String, description: String, steps: [WorkflowDefStep], serviceProviders: Dictionary<String, ServiceProvider>,
 				addClient cWDS: WorkflowDefStep? = nil) {
 		self.name = name
@@ -32,23 +39,7 @@ public class WorkflowChain: Described, Validatable, Codable {
 		else {
 			self.steps = steps
 		}
-		self.serviceProviders = serviceProviders
-	}
-
-	required public init(from decoder: Decoder) throws {
-		let container = try decoder.container(keyedBy: CodingKeys.self)
-		name = try container.decode(String.self, forKey: .name)
-		desc = try container.decode(String.self, forKey: .desc)
-		steps = try container.decode(Array.self, forKey: .steps)
-		serviceProviders = try container.decode(Dictionary.self, forKey: .sps)
-	}
-	
-	public func encode(to encoder: Encoder) throws {
-		var container = encoder.container(keyedBy: CodingKeys.self)
-		try container.encode(name, forKey: .name)
-		try container.encode(desc, forKey: .desc)
-		try container.encode(steps, forKey: .steps)
-		try container.encode(serviceProviders, forKey: .sps)
+		self._serviceProviders = Array(serviceProviders.values)
 	}
 
 
@@ -95,8 +86,8 @@ public class WorkflowChain: Described, Validatable, Codable {
 	}
 	
 	private var hasDuplicateServiceProviders: Bool {
-		let configuredServiceTypes = Set(serviceProviders.keys)
-		return configuredServiceTypes.count != serviceProviders.count
+		let configuredServiceTypes = Set(_serviceProviders.map { $0.service.serviceType })
+		return configuredServiceTypes.count != _serviceProviders.count
 	}
 	
 	public func serviceProviderForStep(at index:Int) -> ServiceProvider? {

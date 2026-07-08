@@ -9,14 +9,7 @@ import Foundation
 import SwiftData
 
 @Model
-public class Connection: Described, ServiceTimeCalculator, Equatable, Codable {
-	enum CodingKeys: CodingKey {
-		case source
-		case destination
-		case bandwidth
-		case latency
-	}
-	
+public class Connection: Described, ServiceTimeCalculator {
 	public var name: String {
 		get {
 			"\(source.name) to \(destination.name)"
@@ -35,31 +28,11 @@ public class Connection: Described, ServiceTimeCalculator, Equatable, Codable {
 	public var bandwidthMbps: Int
 	public var latencyMs: Int
 	
-	public static func == (lhs: Connection, rhs: Connection) -> Bool {
-		lhs.name == rhs.name
-	}
-	
 	init(source: Zone, destination: Zone, bandwidthMbps: Int = 1000, latencyMs: Int = 0) {
 		self.source = source
 		self.destination = destination
 		self.bandwidthMbps = bandwidthMbps
 		self.latencyMs = latencyMs
-	}
-	
-	public required init(from decoder: any Decoder) throws {
-		let container = try decoder.container(keyedBy: CodingKeys.self)
-		source = try container.decode(Zone.self, forKey: .source)
-		destination = try container.decode(Zone.self, forKey: .destination)
-		bandwidthMbps = try container.decode(Int.self, forKey: .bandwidth)
-		latencyMs = try container.decode(Int.self, forKey: .latency)
-	}
-	
-	public func encode(to encoder: Encoder) throws {
-		var container = encoder.container(keyedBy: CodingKeys.self)
-		try container.encode(source, forKey: .source)
-		try container.encode(destination, forKey: .destination)
-		try container.encode(bandwidthMbps, forKey: .bandwidth)
-		try container.encode(latencyMs, forKey: .latency)
 	}
 
 	func inverted() -> Connection {

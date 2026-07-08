@@ -17,33 +17,15 @@ public nonisolated enum ZoneConnectionStatus: CaseIterable {
 }
 
 @Model
-public class Zone: Described, Codable {
-	enum CodingKeys: CodingKey {
-		case name
-		case desc
-	}
-	
-	//private let id: UUID = UUID()
+public class Zone: Described {
 	public var name: String
 	public var desc: String
-	
+
 	init(name: String, description: String) {
 		self.name = name
 		self.desc = description
 	}
-	
-	required public init(from decoder: Decoder) throws {
-		let container = try decoder.container(keyedBy: CodingKeys.self)
-		name = try container.decode(String.self, forKey: .name)
-		desc = try container.decode(String.self, forKey: .desc)
-	}
-	
-	public func encode(to encoder: Encoder) throws {
-		var container = encoder.container(keyedBy: CodingKeys.self)
-		try container.encode(name, forKey: .name)
-		try container.encode(desc, forKey: .desc)
-	}
-	
+
 	public func connect(to destination:Zone, bandwidth: Int, latency: Int) -> Connection {
 		return Connection(source: self, destination: destination, bandwidthMbps: bandwidth, latencyMs: latency)
 	}

@@ -14,7 +14,10 @@ public class ServiceProvider: Described, Validatable {
 	public var desc: String
 	public var service: ServiceDef
 	public var tags: Set<String>
-	@Relationship var nodes: [ComputeNode] = []
+	// The inverse must be explicit: without it SwiftData infers a to-one
+	// inverse, so assigning a node to one provider silently removes it from
+	// every other provider's nodes array.
+	@Relationship(inverse: \ComputeNode.serviceProviders) var nodes: [ComputeNode] = []
 	var _primary = 0
 	
 	public init(name: String, desc: String, service: ServiceDef, nodes: [ComputeNode] = [], tags: Set<String> = [], _primary: Int = 0) {

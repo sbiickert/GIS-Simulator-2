@@ -27,6 +27,10 @@ public nonisolated class ComputeNode: Described, ServiceTimeCalculator {
 	private var _vCores: Int = 0			// if type == .vm
 	@Relationship(deleteRule: .cascade) private var _vmList: [ComputeNode] = []	// if type == .host
 
+	// Inverse of ServiceProvider.nodes (many-to-many). Maintained by SwiftData;
+	// declared so a node can be assigned to several providers at once.
+	var serviceProviders: [ServiceProvider] = []
+
 	public func attachVirtualMachine(_ vm: ComputeNode) {
 		guard self.type == .host else { fatalError("Attempt to add a VM to something other than a physical host.") }
 		guard vm.type == .vm else { fatalError("attachVirtualMachine requires a VM node.") }

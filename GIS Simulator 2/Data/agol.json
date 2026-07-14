@@ -1,0 +1,17 @@
+{
+	"hardware": {
+		"definition": "AMI db.r3.8xlarge (32vc)",
+		"name": "ArcGIS Online Host",
+		"count": 3,
+		"memoryGB": 244
+	},
+	"tags": ["agol"],
+	"service_providers": [
+		{"name": "AGOL Edge", "desc": "", "service": "web"},
+		{"name": "AGOL Portal", "desc": "", "service": "portal"},
+		{"name": "AGOL GIS", "desc": "", "service": "feature"},
+		{"name": "AGOL Basemap", "desc": "", "service": "map"},
+		{"name": "AGOL DB", "desc": "", "service": "relational"},
+		{"name": "AGOL File", "desc": "", "service": "file"}
+	]
+}

@@ -16,7 +16,10 @@ public class WorkflowChain: Described, Validatable {
 	// Persisted as a real relationship so the chain references the design's own
 	// ServiceProvider objects. Storing them in a dictionary attribute would make
 	// SwiftData persist encoded copies, severing object identity on reload.
-	@Relationship private var _serviceProviders: [ServiceProvider] = []
+	// The inverse must be explicit (many-to-many): chains in the same workflow
+	// definition share providers, and an inferred to-one inverse keeps each
+	// provider in only one chain after a relaunch.
+	@Relationship(inverse: \ServiceProvider.chains) private var _serviceProviders: [ServiceProvider] = []
 
 	/// Dictionary-style access to the chain's providers, keyed by service type.
 	public var serviceProviders: Dictionary<String, ServiceProvider> {

@@ -18,6 +18,11 @@ public class ServiceProvider: Described, Validatable {
 	// inverse, so assigning a node to one provider silently removes it from
 	// every other provider's nodes array.
 	@Relationship(inverse: \ComputeNode.serviceProviders) var nodes: [ComputeNode] = []
+	// Inverse of WorkflowChain._serviceProviders (many-to-many). Maintained by
+	// SwiftData; declared so one provider can be assigned to several chains at
+	// once. Without it SwiftData infers a to-one inverse, so saving a provider
+	// into a second chain silently drops it from the first on reload.
+	var chains: [WorkflowChain] = []
 	var _primary = 0
 	
 	public init(name: String, desc: String, service: ServiceDef, nodes: [ComputeNode] = [], tags: Set<String> = [], _primary: Int = 0) {

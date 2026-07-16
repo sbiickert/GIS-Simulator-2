@@ -34,11 +34,7 @@ struct WorkflowDefLibraryView: View {
                 }
             },
             editor: { editing in
-                if let editing {
-                    WorkflowChainEditorView(design: design, workflowDef: editing)
-                } else {
-                    WorkflowDefEditorView(design: design)
-                }
+                WorkflowDefEditorView(design: design, editing: editing)
             },
             viewer: { item in
                 WorkflowDefEditorView(design: design, viewing: item)

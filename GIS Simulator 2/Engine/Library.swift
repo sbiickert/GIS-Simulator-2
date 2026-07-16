@@ -170,7 +170,11 @@ public class Library {
 		do {
 			if let data = try Library.readCSV(filename: "workflows") {
 				for row in data.rows {
-					let names = (row["chains"] as! String).split(separator: "; ").map(String.init)
+					// The chains cell is ";"-delimited, with or without a space
+					// after the separator. Trim each name so either form parses.
+					let names = (row["chains"] as! String)
+						.split(separator: ";")
+						.map { $0.trimmingCharacters(in: .whitespaces) }
 					let chains = names.compactMap { _workflowChains[$0] }
 					let wDef = WorkflowDef(name: row["name"] as! String,
 										   desc: row["description"] as! String,

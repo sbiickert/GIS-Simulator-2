@@ -182,8 +182,8 @@ struct ChainEditorView: View {
 }
 
 /// Multi-select picker that appends chosen steps (favorites first) to a chain's
-/// ordered step list.
-private struct StepChooserView: View {
+/// ordered step list. Shared by `ChainEditorView` and `WorkflowChainEditorView`.
+struct StepChooserView: View {
     @Bindable var design: Design
     @Binding var steps: [WorkflowDefStep]
 

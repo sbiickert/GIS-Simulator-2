@@ -17,6 +17,9 @@ struct WorkflowDefStepEditorView: View {
     var duplicating: WorkflowDefStep?
     /// A predefined item to display read-only until the user duplicates it.
     var viewing: WorkflowDefStep?
+    /// When set, edits a step in place (e.g. one owned by a chain): saving
+    /// writes back through the binding instead of the design's step catalog.
+    var inPlace: Binding<WorkflowDefStep>?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.library) private var library
@@ -37,6 +40,7 @@ struct WorkflowDefStepEditorView: View {
 
     private var isEditingCustom: Bool { editing != nil }
     private var isReadOnly: Bool { viewing != nil && !isEditingCopy }
+    private var isInPlace: Bool { inPlace != nil }
 
     /// Service types the step may reference: the design's catalog keys, plus the
     /// step's current value so an existing reference is never silently dropped.
@@ -106,7 +110,7 @@ struct WorkflowDefStepEditorView: View {
         } message: {
             Text("Chains that already include it keep their own copy.")
         }
-        .navigationTitle(isEditingCustom ? "Edit Step" : (isReadOnly ? "Step Details" : "New Step"))
+        .navigationTitle((isEditingCustom || isInPlace) ? "Edit Step" : (isReadOnly ? "Step Details" : "New Step"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !isReadOnly {
@@ -124,7 +128,7 @@ struct WorkflowDefStepEditorView: View {
     }
 
     private func loadInitial() {
-        let source = editing ?? viewing ?? duplicating
+        let source = editing ?? viewing ?? duplicating ?? inPlace?.wrappedValue
         guard let step = source else { return }
         if duplicating != nil {
             let existing = Set(design.stepCatalog(library).map(\.key))
@@ -155,6 +159,21 @@ struct WorkflowDefStepEditorView: View {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             errorMessage = "Step name is required."
+            return
+        }
+        // In-place edits belong to the owning chain, not the design's step
+        // catalog, so no uniqueness check or catalog upsert applies.
+        if let inPlace {
+            inPlace.wrappedValue = WorkflowDefStep(name: trimmed,
+                                                   desc: desc,
+                                                   serviceType: serviceType,
+                                                   serviceTime: serviceTime,
+                                                   chatter: chatter,
+                                                   requestSizeKB: requestSizeKB,
+                                                   responseSizeKB: responseSizeKB,
+                                                   dataSourceType: dataSourceType,
+                                                   cachePercent: cachePercent)
+            dismiss()
             return
         }
         var existing = Set(design.stepCatalog(library).map(\.key))

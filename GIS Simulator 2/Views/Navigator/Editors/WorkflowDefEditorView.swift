@@ -51,11 +51,15 @@ struct WorkflowDefEditorView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(chains, id: \.persistentModelID) { chain in
-                        VStack(alignment: .leading) {
-                            Text(chain.name)
-                            Text("\(chain.steps.count) steps")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        if isReadOnly {
+                            chainLabel(chain)
+                        } else {
+                            NavigationLink {
+                                WorkflowChainEditorView(design: design, chain: chain)
+                            } label: {
+                                chainLabel(chain)
+                            }
+                            .isDetailLink(false)
                         }
                     }
                     .onDelete { chains.remove(atOffsets: $0) }
@@ -120,6 +124,15 @@ struct WorkflowDefEditorView: View {
             Text(errorMessage ?? "")
         }
         .onAppear(perform: loadInitial)
+    }
+
+    private func chainLabel(_ chain: WorkflowChain) -> some View {
+        VStack(alignment: .leading) {
+            Text(chain.name)
+            Text("\(chain.steps.count) steps")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func loadInitial() {

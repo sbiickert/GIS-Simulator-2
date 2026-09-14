@@ -5,21 +5,22 @@
 
 import SwiftUI
 import SwiftData
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// The three ways to visualise a design. The network (zones + connections) is
 /// not its own mode; it appears inside each mode as zone boundary boxes.
 enum CanvasMode: String, CaseIterable, Identifiable {
     case compute
-    case serviceProviders
     case workflow
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .compute:          return "Compute"
-        case .serviceProviders: return "Service Providers"
-        case .workflow:         return "Workflow"
+        case .compute:  return "Compute"
+        case .workflow: return "Workflow"
         }
     }
 }
@@ -27,6 +28,16 @@ enum CanvasMode: String, CaseIterable, Identifiable {
 struct DesignCanvasView: View {
     let design: Design?
     @State private var mode: CanvasMode
+    @State private var showProviders = true
+
+    // Compute-mode viewport. The diagram is laid out at its natural size and
+    // then scaled to fit, so `zoom` is a multiple of that fit scale (1 = whole
+    // diagram visible) and `pan` is a view-space offset on top of it.
+    @State private var zoom: CGFloat = 1
+    @State private var pan: CGSize = .zero
+    @State private var viewSize: CGSize = .zero
+    @GestureState private var pinch: CGFloat = 1
+    @GestureState private var dragOffset: CGSize = .zero
 
     init(design: Design?, initialMode: CanvasMode = .compute) {
         self.design = design
@@ -37,18 +48,53 @@ struct DesignCanvasView: View {
         Canvas { context, size in
             guard let design else { return }
             switch mode {
-            case .compute:          drawZonedCompute(design, into: &context, size: size, showProviders: false)
-            case .serviceProviders: drawZonedCompute(design, into: &context, size: size, showProviders: true)
-            case .workflow:         drawWorkflow(design, into: &context, size: size)
+            case .compute:
+                drawZonedCompute(design, into: &context, size: size, showProviders: showProviders,
+                                 zoom: zoom * pinch, pan: pan + dragOffset)
+            case .workflow: drawWorkflow(design, into: &context, size: size)
+            }
+        } symbols: {
+            // One icon per service type present in the design, resolved by the
+            // service type string. Types without a matching asset fall back to
+            // "Custom". These are drawn centered inside each provider node.
+            ForEach(serviceTypes, id: \.self) { type in
+                Image(iconAssetName(for: type))
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: CanvasStyle.providerRadius * 1.3,
+                           height: CanvasStyle.providerRadius * 1.3)
+                    .tag(type)
             }
         }
         .background(Color(.systemBackground))
+        .onTapGesture(count: 2) { resetViewport() }
+        .gesture(magnifyGesture, isEnabled: mode == .compute)
+        .simultaneousGesture(panGesture, isEnabled: mode == .compute)
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { viewSize = $0 }
+        .onChange(of: mode) { resetViewport() }
+        .onChange(of: design?.persistentModelID) { resetViewport() }
         .overlay(alignment: .top) {
-            Picker("View", selection: $mode) {
-                ForEach(CanvasMode.allCases) { Text($0.title).tag($0) }
+            HStack(spacing: 10) {
+                Picker("View", selection: $mode) {
+                    ForEach(CanvasMode.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+
+                if mode == .compute {
+                    Toggle("Service Providers", isOn: $showProviders)
+                        .toggleStyle(.switch)
+                        .fixedSize()
+
+                    if isZoomed {
+                        Button("Fit", systemImage: "arrow.up.left.and.down.right.magnifyingglass") {
+                            resetViewport()
+                        }
+                        .buttonStyle(.bordered)
+                        .fixedSize()
+                    }
+                }
             }
-            .pickerStyle(.segmented)
-            .fixedSize()
             .padding(6)
             .background(.thinMaterial, in: Capsule())
             .padding(.top, 8)
@@ -71,10 +117,75 @@ struct DesignCanvasView: View {
         }
     }
 
+    // MARK: Viewport
+
+    private var isZoomed: Bool { abs(zoom - 1) > 0.001 || pan != .zero }
+
+    /// Back to scale-to-fit, centered.
+    private func resetViewport() {
+        zoom = 1
+        pan = .zero
+    }
+
+    private var magnifyGesture: some Gesture {
+        MagnifyGesture()
+            .updating($pinch) { value, state, _ in state = value.magnification }
+            .onEnded { value in
+                zoom = clampZoom(zoom * value.magnification)
+                pan = clampPan(pan)
+            }
+    }
+
+    private var panGesture: some Gesture {
+        DragGesture()
+            .updating($dragOffset) { value, state, _ in state = value.translation }
+            .onEnded { value in
+                pan = clampPan(pan + value.translation)
+            }
+    }
+
+    /// Limits the pan to however much of the scaled diagram overflows the
+    /// viewport, so it can never be dragged out of sight. Collapses to zero
+    /// once the whole diagram fits.
+    private func clampPan(_ offset: CGSize) -> CGSize {
+        guard let design, mode == .compute else { return .zero }
+        let content = computeLayout(design).contentSize
+        let viewport = computeViewport(in: viewSize)
+        let scale = fitScale(content: content, in: viewport.size) * clampZoom(zoom)
+        let slackX = max(0, (content.width * scale - viewport.width) / 2)
+        let slackY = max(0, (content.height * scale - viewport.height) / 2)
+        return CGSize(width: min(max(offset.width, -slackX), slackX),
+                      height: min(max(offset.height, -slackY), slackY))
+    }
+
+    /// Distinct service types across every provider in the design, used to build
+    /// the canvas symbol set.
+    private var serviceTypes: [String] {
+        guard let design else { return [] }
+        return Array(Set(design.serviceProviders.map(\.service.serviceType))).sorted()
+    }
+
+    /// Asset name for a service type. Service types are stored lowercase
+    /// (e.g. "web", "dbms") while the catalog assets are cased (e.g. "Web",
+    /// "DBMS"), so we probe the common case variants and fall back to the
+    /// shared "Custom" icon when none exist.
+    private func iconAssetName(for serviceType: String) -> String {
+        let candidates = [serviceType, serviceType.capitalized, serviceType.uppercased()]
+        return candidates.first(where: assetExists) ?? "Custom"
+    }
+
+    private func assetExists(_ name: String) -> Bool {
+        #if canImport(UIKit)
+        return UIImage(named: name) != nil
+        #else
+        return NSImage(named: name) != nil
+        #endif
+    }
+
     private var emptyMessage: String? {
         guard let design else { return "Select a design" }
         switch mode {
-        case .compute, .serviceProviders:
+        case .compute:
             return design.zones.isEmpty ? "No zones defined" : nil
         case .workflow:
             return design.allWorkflows.isEmpty ? "No workflows configured" : nil
@@ -105,6 +216,19 @@ private enum CanvasStyle {
     static let providerRadius: CGFloat = 18
     static let wfRadius: CGFloat = 24
     static let topInset: CGFloat = 56
+
+    // Natural-size compute layout metrics (content coordinates)
+    static let outerPad: CGFloat = 24
+    static let zoneGap: CGFloat = 64
+    static let nodeGap: CGFloat = 16
+    static let zoneInset = EdgeInsets(top: 42, leading: 14, bottom: 14, trailing: 14)
+    static let minZoneSize = CGSize(width: 220, height: 150)
+    /// Room reserved per service provider (circle plus its name) when sizing a
+    /// zone; providers float into the slack left around the node grid.
+    static let providerCell: CGFloat = 64
+    /// How far scale-to-fit may magnify a diagram smaller than the canvas.
+    static let maxFitScale: CGFloat = 1.6
+    static let maxZoom: CGFloat = 8
 }
 
 // MARK: - Compute / Service Providers
@@ -112,15 +236,73 @@ private enum CanvasStyle {
 private struct NodePlacement {
     let center: CGPoint
     let radius: CGFloat
+    /// Region the node is kept inside during overlap resolution (its zone box).
+    let bounds: CGRect
+}
+
+/// One circle fed to the overlap-resolution pass. Compute nodes spring back
+/// toward their grid/ring slot (`anchorStrength > 0`); providers float freely.
+private struct LayoutCircle {
+    let id: ObjectIdentifier
+    var center: CGPoint
+    let radius: CGFloat
+    /// Radius used for collisions. Larger than the drawn circle so the
+    /// captions printed beneath a node keep other circles at arm's length.
+    let layoutRadius: CGFloat
+    let anchor: CGPoint
+    let anchorStrength: CGFloat
+    let bounds: CGRect
+}
+
+/// How one zone's contents pack: the grid its host/client clusters sit in, the
+/// cell each needs (captions included) and the VM ring radius per host.
+private struct ZonePlan {
+    var units: [ComputeNode] = []
+    var cols = 1
+    var rows = 1
+    var cellW: CGFloat = 0
+    var cellH: CGFloat = 0
+    var ringRadius: [ObjectIdentifier: CGFloat] = [:]
+    /// Room the zone's contents need inside its box: the node grid, grown for
+    /// the service providers that have to fit around it.
+    var innerSize: CGSize = .zero
+}
+
+/// The compute diagram at its natural size: zone rects in content coordinates
+/// plus the overall size needed to draw it without crowding. The canvas scales
+/// this to fit, so a busier design shrinks uniformly instead of squeezing.
+private struct ComputeLayout {
+    let contentSize: CGSize
+    let zoneRects: [ObjectIdentifier: CGRect]
+    let plans: [ObjectIdentifier: ZonePlan]
 }
 
 extension DesignCanvasView {
 
     /// Draws the zone boxes, inter-zone connection arrows and the compute nodes
     /// inside their zone. When `showProviders` is true it also overlays the
-    /// service-provider nodes and their links (Service Providers mode).
-    fileprivate func drawZonedCompute(_ design: Design, into ctx: inout GraphicsContext, size: CGSize, showProviders: Bool) {
-        let regions = zoneRegions(design.zones, in: size)
+    /// service-provider nodes and their links.
+    ///
+    /// The diagram is laid out at its natural size (zones sized to their
+    /// contents) and then drawn through a single scale-to-fit transform, so
+    /// circles, captions and spacing all shrink together as the design grows.
+    /// `zoom` multiplies that fit scale and `pan` offsets it.
+    fileprivate func drawZonedCompute(_ design: Design, into ctx: inout GraphicsContext, size: CGSize,
+                                      showProviders: Bool, zoom: CGFloat, pan: CGSize) {
+        let layout = computeLayout(design)
+        guard layout.contentSize.width > 1, layout.contentSize.height > 1 else { return }
+
+        let viewport = computeViewport(in: size)
+        let scale = fitScale(content: layout.contentSize, in: viewport.size) * clampZoom(zoom)
+        let scaled = CGSize(width: layout.contentSize.width * scale,
+                            height: layout.contentSize.height * scale)
+        let slackX = max(0, (scaled.width - viewport.width) / 2)
+        let slackY = max(0, (scaled.height - viewport.height) / 2)
+        ctx.translateBy(x: viewport.midX - scaled.width / 2 + min(max(pan.width, -slackX), slackX),
+                        y: viewport.midY - scaled.height / 2 + min(max(pan.height, -slackY), slackY))
+        ctx.scaleBy(x: scale, y: scale)
+
+        let regions = layout.zoneRects
 
         // 1. Zone boxes
         for zone in design.zones {
@@ -132,63 +314,121 @@ extension DesignCanvasView {
         // 2. Inter-zone connection arrows
         drawConnectionArrows(design, regions: regions, into: &ctx)
 
-        // 3. Place all compute nodes (hosts, clients, vms) within their zone box
-        let placements = placeComputeNodes(design, regions: regions)
+        // 3. Place all compute nodes (hosts, clients, vms) at their ideal slot
+        let placements = placeComputeNodes(design, layout: layout)
 
-        // 4. Host -> VM edges
+        // 4. Seed provider positions. A provider on a single node is fanned out
+        // on an arc just outside that node, so siblings start spread around it
+        // instead of stacked in one column; a round-robin / failover provider
+        // starts at the centroid of the nodes it connects to. Providers whose
+        // nodes all live in one zone are confined to that zone's box; one that
+        // spans zones may float anywhere so its links can cross boxes.
+        let drawable = CGRect(origin: .zero, size: layout.contentSize)
+        var providerInit: [ObjectIdentifier: (position: CGPoint, bounds: CGRect)] = [:]
+        if showProviders {
+            var hostOfVM: [ObjectIdentifier: ComputeNode] = [:]
+            for host in design.physicalComputeNodes {
+                for vm in host.vmList { hostOfVM[ObjectIdentifier(vm)] = host }
+            }
+            // Fan width depends on how many providers share a node, so count
+            // them up front and then walk the providers in their stable order.
+            var totals: [ObjectIdentifier: Int] = [:]
+            for sp in design.serviceProviders {
+                let placed = sp.nodes.filter { placements[ObjectIdentifier($0)] != nil }
+                if placed.count == 1 { totals[ObjectIdentifier(placed[0]), default: 0] += 1 }
+            }
+
+            var seeded: [ObjectIdentifier: Int] = [:]
+            for sp in design.serviceProviders {
+                let placed = sp.nodes.filter { placements[ObjectIdentifier($0)] != nil }
+                guard !placed.isEmpty else { continue }
+
+                let pos: CGPoint
+                if placed.count == 1, let p = placements[ObjectIdentifier(placed[0])] {
+                    let node = placed[0]
+                    let key = ObjectIdentifier(node)
+                    let index = seeded[key, default: 0]
+                    seeded[key] = index + 1
+                    let plan = layout.plans[ObjectIdentifier(node.zone)]
+                    pos = providerSeed(node: node, placement: p, index: index, total: totals[key] ?? 1,
+                                       clusterCenter: hostOfVM[key].flatMap { placements[ObjectIdentifier($0)]?.center },
+                                       ringRadius: plan?.ringRadius[key])
+                } else {
+                    let centers = placed.compactMap { placements[ObjectIdentifier($0)]?.center }
+                    pos = centers.reduce(.zero, +) * (1 / CGFloat(centers.count))
+                }
+
+                let zones = Set(sp.nodes.map { ObjectIdentifier($0.zone) })
+                let bounds = zones.count == 1
+                    ? (zones.first.flatMap { regions[$0] }?.inset(by: CanvasStyle.zoneInset) ?? drawable)
+                    : drawable
+                providerInit[ObjectIdentifier(sp)] = (pos, bounds)
+            }
+        }
+
+        // 5. Resolve overlaps across every circle (nodes lightly anchored to
+        // their slot, providers free), in a stable order for determinism.
+        var circles: [LayoutCircle] = []
+        for node in design.allComputeNodes {
+            if let p = placements[ObjectIdentifier(node)] {
+                circles.append(LayoutCircle(id: ObjectIdentifier(node), center: p.center, radius: p.radius,
+                                            layoutRadius: p.radius + 10,
+                                            anchor: p.center, anchorStrength: 0.2, bounds: p.bounds))
+            }
+        }
+        for sp in design.serviceProviders {
+            if let seed = providerInit[ObjectIdentifier(sp)] {
+                circles.append(LayoutCircle(id: ObjectIdentifier(sp), center: seed.position,
+                                            radius: CanvasStyle.providerRadius,
+                                            layoutRadius: CanvasStyle.providerRadius + 14,
+                                            anchor: seed.position, anchorStrength: 0, bounds: seed.bounds))
+            }
+        }
+        resolveOverlaps(&circles)
+        var resolved: [ObjectIdentifier: CGPoint] = [:]
+        for c in circles { resolved[c.id] = c.center }
+
+        // 6. Host -> VM edges
         for host in design.physicalComputeNodes where host.type == .host {
-            guard let hp = placements[ObjectIdentifier(host)] else { continue }
+            guard let hc = resolved[ObjectIdentifier(host)] else { continue }
             for vm in host.vmList {
-                if let vp = placements[ObjectIdentifier(vm)] {
-                    drawEdge(from: hp.center, to: vp.center, into: &ctx)
+                if let vc = resolved[ObjectIdentifier(vm)] {
+                    drawEdge(from: hc, to: vc, into: &ctx)
                 }
             }
         }
 
-        // 5. Provider links (behind nodes) + record positions. Providers are
-        // anchored at their handler node and fanned out when several share one
-        // node, so their labels don't stack. Links reach every node they run on
-        // (crossing zone boxes for multi-zone providers).
-        var providerPositions: [ObjectIdentifier: CGPoint] = [:]
+        // 7. Provider links behind the nodes — one edge to every node the
+        // provider runs on (crossing zone boxes for multi-zone providers).
         if showProviders {
-            var byHandler: [ObjectIdentifier: [ServiceProvider]] = [:]
-            var handlerOrder: [ObjectIdentifier] = []
             for sp in design.serviceProviders {
-                guard let handler = sp.handlerNode, placements[ObjectIdentifier(handler)] != nil else { continue }
-                let hid = ObjectIdentifier(handler)
-                if byHandler[hid] == nil { handlerOrder.append(hid) }
-                byHandler[hid, default: []].append(sp)
-            }
-            for hid in handlerOrder {
-                guard let anchor = placements[hid], let sps = byHandler[hid] else { continue }
-                let ringR = anchor.radius + 30
-                for (i, sp) in sps.enumerated() {
-                    let spread = sps.count > 1 ? (CGFloat(i) - CGFloat(sps.count - 1) / 2) * 0.7 : 0
-                    let angle = -CGFloat.pi / 2 + spread
-                    let pos = anchor.center + CGPoint(x: ringR * cos(angle), y: ringR * sin(angle))
-                    providerPositions[ObjectIdentifier(sp)] = pos
-                    for node in sp.nodes {
-                        if let target = placements[ObjectIdentifier(node)] {
-                            drawEdge(from: pos, to: target.center, into: &ctx)
-                        }
+                guard let pos = resolved[ObjectIdentifier(sp)] else { continue }
+                for node in sp.nodes {
+                    if let target = resolved[ObjectIdentifier(node)] {
+                        drawEdge(from: pos, to: target, into: &ctx)
                     }
                 }
             }
         }
 
-        // 6. Compute node circles + captions
+        // 8. Compute node circles + captions
         for node in design.allComputeNodes {
-            if let p = placements[ObjectIdentifier(node)] {
-                drawComputeNode(node, at: p.center, radius: p.radius, into: &ctx)
+            if let p = placements[ObjectIdentifier(node)], let center = resolved[ObjectIdentifier(node)] {
+                drawComputeNode(node, at: center, radius: p.radius, into: &ctx)
             }
         }
 
-        // 7. Provider circles on top, name below
+        // 9. Provider circles on top, name below
         if showProviders {
             for sp in design.serviceProviders {
-                if let pos = providerPositions[ObjectIdentifier(sp)] {
-                    drawNodeCircle(pos, radius: CanvasStyle.providerRadius, fill: CanvasStyle.provider,
-                                   stroke: .white, label: "", labelColor: .clear, into: &ctx)
+                if let pos = resolved[ObjectIdentifier(sp)] {
+                    // White disc with an accent-colored outline and the service
+                    // type icon centered inside it.
+                    drawNodeCircle(pos, radius: CanvasStyle.providerRadius, fill: .white,
+                                   stroke: .accentColor, label: "", labelColor: .clear, into: &ctx)
+                    if let icon = ctx.resolveSymbol(id: sp.service.serviceType) {
+                        ctx.draw(icon, at: pos)
+                    }
                     drawText(sp.name, at: CGPoint(x: pos.x, y: pos.y + CanvasStyle.providerRadius + 3),
                              size: 8, weight: .semibold, color: .primary, anchor: .top, into: &ctx)
                 }
@@ -196,24 +436,183 @@ extension DesignCanvasView {
         }
     }
 
-    /// Packs zones into a grid; every zone (even empty) gets a cell.
-    fileprivate func zoneRegions(_ zones: [Zone], in size: CGSize) -> [ObjectIdentifier: CGRect] {
-        guard !zones.isEmpty else { return [:] }
-        let n = zones.count
-        let cols = max(1, Int(ceil(sqrt(Double(n)))))
-        let rows = max(1, Int(ceil(Double(n) / Double(cols))))
-        let outerPad: CGFloat = 24
-        let gap: CGFloat = 64
-        let cellW = (size.width - outerPad * 2 - gap * CGFloat(cols - 1)) / CGFloat(cols)
-        let cellH = (size.height - CanvasStyle.topInset - outerPad - gap * CGFloat(rows - 1)) / CGFloat(rows)
-        var result: [ObjectIdentifier: CGRect] = [:]
-        for (i, zone) in zones.enumerated() {
-            let r = i / cols, c = i % cols
-            let x = outerPad + CGFloat(c) * (cellW + gap)
-            let y = CanvasStyle.topInset + CGFloat(r) * (cellH + gap)
-            result[ObjectIdentifier(zone)] = CGRect(x: x, y: y, width: max(1, cellW), height: max(1, cellH))
+    // MARK: Natural-size layout
+
+    /// Area of the canvas the diagram is fitted into, below the mode picker.
+    fileprivate func computeViewport(in size: CGSize) -> CGRect {
+        CGRect(x: 0, y: CanvasStyle.topInset,
+               width: max(1, size.width), height: max(1, size.height - CanvasStyle.topInset))
+    }
+
+    /// Uniform scale that brings the natural-size diagram inside the viewport.
+    /// A sparse diagram is allowed to grow a little so it isn't lost in a large
+    /// canvas, but not so far that the captions look oversized.
+    fileprivate func fitScale(content: CGSize, in size: CGSize) -> CGFloat {
+        guard content.width > 0, content.height > 0 else { return 1 }
+        return min(CanvasStyle.maxFitScale,
+                   min(size.width / content.width, size.height / content.height))
+    }
+
+    fileprivate func clampZoom(_ z: CGFloat) -> CGFloat {
+        min(max(z.isFinite ? z : 1, 1), CanvasStyle.maxZoom)
+    }
+
+    /// Lays the zones out in a grid whose columns are as wide as their widest
+    /// zone and rows as tall as their tallest, so a zone holding one client
+    /// stays small while a dense one gets the room it needs. The result is in
+    /// content coordinates, independent of the canvas size.
+    fileprivate func computeLayout(_ design: Design) -> ComputeLayout {
+        let zones = design.zones
+        guard !zones.isEmpty else {
+            return ComputeLayout(contentSize: CGSize(width: 1, height: 1), zoneRects: [:], plans: [:])
         }
-        return result
+
+        var plans: [ObjectIdentifier: ZonePlan] = [:]
+        var boxes: [CGSize] = []
+        for zone in zones {
+            let plan = zonePlan(for: zone, in: design)
+            plans[ObjectIdentifier(zone)] = plan
+            let insets = CanvasStyle.zoneInset
+            boxes.append(CGSize(
+                width: max(CanvasStyle.minZoneSize.width,
+                           plan.innerSize.width + insets.leading + insets.trailing),
+                height: max(CanvasStyle.minZoneSize.height,
+                            plan.innerSize.height + insets.top + insets.bottom)))
+        }
+
+        let cols = max(1, Int(ceil(sqrt(Double(zones.count)))))
+        let rows = max(1, Int(ceil(Double(zones.count) / Double(cols))))
+        var colW = [CGFloat](repeating: 0, count: cols)
+        var rowH = [CGFloat](repeating: 0, count: rows)
+        for (i, box) in boxes.enumerated() {
+            colW[i % cols] = max(colW[i % cols], box.width)
+            rowH[i / cols] = max(rowH[i / cols], box.height)
+        }
+
+        let pad = CanvasStyle.outerPad, gap = CanvasStyle.zoneGap
+        var rects: [ObjectIdentifier: CGRect] = [:]
+        var y = pad
+        for r in 0..<rows {
+            var x = pad
+            for c in 0..<cols {
+                let i = r * cols + c
+                if i < zones.count {
+                    rects[ObjectIdentifier(zones[i])] = CGRect(x: x, y: y, width: colW[c], height: rowH[r])
+                }
+                x += colW[c] + gap
+            }
+            y += rowH[r] + gap
+        }
+
+        let content = CGSize(width: pad * 2 + colW.reduce(0, +) + gap * CGFloat(cols - 1),
+                             height: pad * 2 + rowH.reduce(0, +) + gap * CGFloat(rows - 1))
+        return ComputeLayout(contentSize: content, zoneRects: rects, plans: plans)
+    }
+
+    /// Works out the grid one zone's hosts and clients pack into, sizing every
+    /// cell to the largest host+VM cluster *including its captions*, then grows
+    /// the zone by the area its service providers need.
+    fileprivate func zonePlan(for zone: Zone, in design: Design) -> ZonePlan {
+        var plan = ZonePlan()
+        plan.units = design.physicalComputeNodes.filter { $0.zone === zone }
+        guard !plan.units.isEmpty else { return plan }
+
+        let gap = CanvasStyle.nodeGap
+        for unit in plan.units {
+            let own = footprint(of: unit)
+            var halfW = own.width, halfH = own.height
+
+            if unit.type == .host, !unit.vmList.isEmpty {
+                // Ring the VMs out far enough that neighbouring VMs — captions
+                // and all — clear each other and the host's own caption.
+                let vm = unit.vmList.reduce(CGSize.zero) { widest, next in
+                    let f = footprint(of: next)
+                    return CGSize(width: max(widest.width, f.width), height: max(widest.height, f.height))
+                }
+                let count = unit.vmList.count
+                let chord = count > 1 ? (vm.width + gap) / sin(.pi / CGFloat(count)) : 0
+                let ring = max(CanvasStyle.hostRadius + vm.height + gap, chord)
+                plan.ringRadius[ObjectIdentifier(unit)] = ring
+                halfW = max(halfW, ring + vm.width)
+                halfH = max(halfH, ring + vm.height)
+            }
+
+            // Providers settle around the cluster they run on, so each cell has
+            // to be wide enough for a band of them outside the cluster — enough
+            // circumference for every provider attached to this host or its VMs.
+            let providers = providerCount(for: unit, in: design)
+            if providers > 0 {
+                let cell = CanvasStyle.providerCell
+                let band = max(halfW, halfH) + cell * 0.75
+                let circumference = CGFloat(providers) * cell / (2 * .pi)
+                let reach = max(band, circumference)
+                halfW = max(halfW, reach)
+                halfH = max(halfH, reach)
+            }
+
+            plan.cellW = max(plan.cellW, 2 * halfW + gap)
+            plan.cellH = max(plan.cellH, 2 * halfH + gap)
+        }
+
+        let n = plan.units.count
+        plan.cols = max(1, Int(ceil(sqrt(Double(n)))))
+        plan.rows = max(1, Int(ceil(Double(n) / Double(plan.cols))))
+        plan.innerSize = CGSize(width: plan.cellW * CGFloat(plan.cols),
+                                height: plan.cellH * CGFloat(plan.rows))
+        return plan
+    }
+
+    /// Starting point for a provider that runs on one node: on an arc outside
+    /// that node — beyond the VM ring for a host that has one — centered on the
+    /// direction leading away from the cluster, with siblings fanned to either
+    /// side. `clusterCenter` is the host center when the node is a VM.
+    fileprivate func providerSeed(node: ComputeNode, placement: NodePlacement, index: Int, total: Int,
+                                  clusterCenter: CGPoint?, ringRadius: CGFloat?) -> CGPoint {
+        let radius: CGFloat
+        if let ring = ringRadius {
+            radius = ring + CanvasStyle.vmRadius + CanvasStyle.providerRadius + 10
+        } else {
+            radius = placement.radius + CanvasStyle.providerRadius + 16
+        }
+        // Point away from the host for a VM; straight up for anything else.
+        var outward = clusterCenter.map { (placement.center - $0).normalized() } ?? .zero
+        if outward == .zero { outward = CGPoint(x: 0, y: -1) }
+
+        let step = min(2 * .pi / CGFloat(max(total, 1)), CanvasStyle.providerCell / radius)
+        let angle = atan2(outward.y, outward.x) + step * (CGFloat(index) - CGFloat(total - 1) / 2)
+        return placement.center + CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
+    }
+
+    /// Providers that draw a link to this host, its VMs, or this client.
+    fileprivate func providerCount(for unit: ComputeNode, in design: Design) -> Int {
+        let cluster = Set(([unit] + unit.vmList).map { ObjectIdentifier($0) })
+        return design.serviceProviders.filter { sp in
+            sp.nodes.contains { cluster.contains(ObjectIdentifier($0)) }
+        }.count
+    }
+
+    /// Half-width and half-height a node occupies, captions included. The name
+    /// and spec lines are much wider than the circles, so they — not the radii —
+    /// decide how much room a node needs.
+    fileprivate func footprint(of node: ComputeNode) -> CGSize {
+        let radius = node.type == .vm ? CanvasStyle.vmRadius : CanvasStyle.hostRadius
+        var widest = textWidth(node.name, size: 10)
+        if node.type != .vm {
+            widest = max(widest, textWidth(node.hwDef.processor, size: 9))
+        }
+        widest = max(widest, textWidth("\(node.displayCpuCount) CPU · \(node.memoryGB) GB", size: 9))
+        // Spec lines stack downward from 12pt below the center, 12pt apart.
+        let captionLines = node.type == .vm ? 1 : 2
+        return CGSize(width: max(radius, widest / 2),
+                      height: max(radius, 12 + CGFloat(captionLines) * 12))
+    }
+
+    /// Approximate width of a drawn string. Canvas text can only be measured
+    /// through a GraphicsContext, and layout runs before drawing, so estimate
+    /// from the character count (the system font averages a little over half
+    /// its point size per character).
+    fileprivate func textWidth(_ s: String, size: CGFloat) -> CGFloat {
+        CGFloat(s.count) * size * 0.55
     }
 
     fileprivate func drawZoneBox(_ zone: Zone, in rect: CGRect, network: [Connection], into ctx: inout GraphicsContext) {
@@ -251,41 +650,81 @@ extension DesignCanvasView {
         }
     }
 
-    /// Grid-packs each zone's hosts and clients into its box, and rings each
-    /// host's VMs around it.
-    fileprivate func placeComputeNodes(_ design: Design, regions: [ObjectIdentifier: CGRect]) -> [ObjectIdentifier: NodePlacement] {
+    /// Grid-packs each zone's hosts and clients into its box and rings each
+    /// host's VMs around it, using the cell sizes and ring radii the layout
+    /// already reserved room for. No positions are squeezed here: the zone box
+    /// is guaranteed to be big enough, so these are both the *ideal* anchors
+    /// and, for nodes, very nearly the final positions.
+    fileprivate func placeComputeNodes(_ design: Design, layout: ComputeLayout) -> [ObjectIdentifier: NodePlacement] {
         var placements: [ObjectIdentifier: NodePlacement] = [:]
+
         for zone in design.zones {
-            guard let rect = regions[ObjectIdentifier(zone)] else { continue }
-            let units = design.physicalComputeNodes.filter { $0.zone === zone }
-            guard !units.isEmpty else { continue }
+            guard let rect = layout.zoneRects[ObjectIdentifier(zone)],
+                  let plan = layout.plans[ObjectIdentifier(zone)], !plan.units.isEmpty else { continue }
 
-            let inner = CGRect(x: rect.minX + 14, y: rect.minY + 42,
-                               width: max(1, rect.width - 28), height: max(1, rect.height - 56))
-            let n = units.count
-            let cols = max(1, Int(ceil(sqrt(Double(n)))))
-            let rows = max(1, Int(ceil(Double(n) / Double(cols))))
-            let cellW = inner.width / CGFloat(cols)
-            let cellH = inner.height / CGFloat(rows)
+            let inner = rect.inset(by: CanvasStyle.zoneInset)
+            let originX = inner.midX - plan.cellW * CGFloat(plan.cols) / 2
+            let originY = inner.midY - plan.cellH * CGFloat(plan.rows) / 2
 
-            for (i, unit) in units.enumerated() {
-                let r = i / cols, c = i % cols
-                let center = CGPoint(x: inner.minX + (CGFloat(c) + 0.5) * cellW,
-                                     y: inner.minY + (CGFloat(r) + 0.5) * cellH)
-                placements[ObjectIdentifier(unit)] = NodePlacement(center: center, radius: CanvasStyle.hostRadius)
+            for (i, unit) in plan.units.enumerated() {
+                let r = i / plan.cols, c = i % plan.cols
+                let center = CGPoint(x: originX + (CGFloat(c) + 0.5) * plan.cellW,
+                                     y: originY + (CGFloat(r) + 0.5) * plan.cellH)
+                placements[ObjectIdentifier(unit)] = NodePlacement(center: center, radius: CanvasStyle.hostRadius, bounds: inner)
 
-                if unit.type == .host, !unit.vmList.isEmpty {
-                    let ringR = max(CanvasStyle.hostRadius + CanvasStyle.vmRadius + 8,
-                                    min(cellW, cellH) * 0.32)
+                if let ringR = plan.ringRadius[ObjectIdentifier(unit)] {
                     for (j, vm) in unit.vmList.enumerated() {
                         let a = -CGFloat.pi / 2 + 2 * .pi * CGFloat(j) / CGFloat(unit.vmList.count)
                         let p = CGPoint(x: center.x + ringR * cos(a), y: center.y + ringR * sin(a))
-                        placements[ObjectIdentifier(vm)] = NodePlacement(center: p, radius: CanvasStyle.vmRadius)
+                        placements[ObjectIdentifier(vm)] = NodePlacement(center: p, radius: CanvasStyle.vmRadius, bounds: inner)
                     }
                 }
             }
         }
         return placements
+    }
+
+    /// Iteratively pushes overlapping circles apart. Compute nodes spring back
+    /// toward their anchor (grid/ring slot) so the layout stays legible;
+    /// providers (`anchorStrength == 0`) float freely to the gaps. Deterministic:
+    /// the caller supplies circles in a stable order.
+    fileprivate func resolveOverlaps(_ circles: inout [LayoutCircle], iterations: Int = 60) {
+        let spacing: CGFloat = 6
+        func mobility(_ c: LayoutCircle) -> CGFloat { c.anchorStrength > 0 ? 0.5 : 1.0 }
+        func clamped(_ p: CGPoint, in b: CGRect, radius r: CGFloat) -> CGPoint {
+            let minX = b.minX + r, maxX = b.maxX - r
+            let minY = b.minY + r, maxY = b.maxY - r
+            return CGPoint(x: minX <= maxX ? min(max(p.x, minX), maxX) : b.midX,
+                           y: minY <= maxY ? min(max(p.y, minY), maxY) : b.midY)
+        }
+
+        guard circles.count > 0 else { return }
+        for _ in 0..<iterations {
+            for i in 0..<circles.count {
+                for j in (i + 1)..<circles.count {
+                    let a = circles[i], b = circles[j]
+                    let delta = b.center - a.center
+                    let dist = delta.length
+                    let minDist = a.layoutRadius + b.layoutRadius + spacing
+                    guard dist < minDist else { continue }
+                    let overlap = minDist - dist
+                    let dir = dist > 0.0001 ? delta.normalized() : CGPoint(x: 1, y: 0)
+                    let ma = mobility(a), mb = mobility(b)
+                    let total = ma + mb
+                    guard total > 0 else { continue }
+                    circles[i].center = a.center - dir * (overlap * ma / total)
+                    circles[j].center = b.center + dir * (overlap * mb / total)
+                }
+            }
+            for i in 0..<circles.count {
+                let c = circles[i]
+                var p = c.center
+                if c.anchorStrength > 0 {
+                    p = p + (c.anchor - p) * c.anchorStrength
+                }
+                circles[i].center = clamped(p, in: c.bounds, radius: c.radius)
+            }
+        }
     }
 
     fileprivate func drawComputeNode(_ node: ComputeNode, at center: CGPoint, radius: CGFloat, into ctx: inout GraphicsContext) {
@@ -608,6 +1047,18 @@ private extension ComputeNode {
 
 private extension CGRect {
     var center: CGPoint { CGPoint(x: midX, y: midY) }
+
+    func inset(by insets: EdgeInsets) -> CGRect {
+        CGRect(x: minX + insets.leading, y: minY + insets.top,
+               width: max(1, width - insets.leading - insets.trailing),
+               height: max(1, height - insets.top - insets.bottom))
+    }
+}
+
+private extension CGSize {
+    static func + (a: CGSize, b: CGSize) -> CGSize {
+        CGSize(width: a.width + b.width, height: a.height + b.height)
+    }
 }
 
 private extension CGPoint {
@@ -705,6 +1156,41 @@ private func sampleDesign(_ container: ModelContainer) -> Design {
     try! container.mainContext.fetch(FetchDescriptor<Design>()).first!
 }
 
+/// A zone dense enough to exercise the scale-to-fit layout: several hosts with
+/// long hardware names and a pile of providers on each.
+@MainActor
+private func busyContainer() -> ModelContainer {
+    let container = try! ModelContainer(
+        for: Design.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    let ctx = container.mainContext
+    let design = Design(name: "ArcGIS Online", desc: "")
+    ctx.insert(design)
+
+    let zone = Zone(name: "ArcGIS Online", description: "SaaS")
+    design.addZone(zone, localBandwidthMbps: 10_000, localLatencyMS: 0)
+    let hw = HardwareDef(processor: "AMI db.r3.8xlarge (32vc)", cores: 16, specIntRate2017: 160)
+
+    let types = ["portal", "dbms", "gis", "file", "map", "edge"]
+    for h in 1...3 {
+        let host = ComputeNode(name: "ArcGIS Online Host \(h)", desc: "", hwDef: hw,
+                               memoryGB: 244, zone: zone, type: .host)
+        ctx.insert(host)
+        design.addCompute(host)
+        for type in types.prefix(h == 1 ? 3 : 2) {
+            let sp = ServiceProvider(name: "AGOL \(type.capitalized)", desc: "",
+                                     service: ServiceDef(name: type.capitalized, desc: "",
+                                                         serviceType: type, balancingModel: .single))
+            sp.addNode(host)
+            ctx.insert(sp)
+            design.addServiceProvider(sp)
+        }
+    }
+    try? ctx.save()
+    return container
+}
+
 #Preview("Compute") {
     let container = sampleContainer()
     DesignCanvasView(design: sampleDesign(container), initialMode: .compute)
@@ -712,9 +1198,9 @@ private func sampleDesign(_ container: ModelContainer) -> Design {
         .frame(width: 700, height: 500)
 }
 
-#Preview("Service Providers") {
-    let container = sampleContainer()
-    DesignCanvasView(design: sampleDesign(container), initialMode: .serviceProviders)
+#Preview("Compute (busy)") {
+    let container = busyContainer()
+    DesignCanvasView(design: sampleDesign(container), initialMode: .compute)
         .modelContainer(container)
         .frame(width: 700, height: 500)
 }

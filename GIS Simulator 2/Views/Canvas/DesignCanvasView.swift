@@ -99,15 +99,15 @@ struct DesignCanvasView: View {
             .background(.thinMaterial, in: Capsule())
             .padding(.top, 8)
         }
-        .overlay(alignment: .topLeading) {
-            if let design {
-                Text(design.name)
-                    .font(.headline)
-                    .padding(8)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    .padding()
-            }
-        }
+//        .overlay(alignment: .topLeading) {
+//            if let design {
+//                Text(design.name)
+//                    .font(.headline)
+//                    .padding(8)
+//                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+//                    .padding()
+//            }
+//        }
         .overlay {
             if let message = emptyMessage {
                 Text(message)
@@ -217,15 +217,28 @@ private enum CanvasStyle {
     static let wfRadius: CGFloat = 24
     static let topInset: CGFloat = 56
 
+    // Compute-mode label metrics. `footprint(of:)` reserves space from these
+    // and `drawComputeNode` draws with them, so they have to stay in step.
+    static let nodeNameSize: CGFloat = 17
+    static let nodeSpecSize: CGFloat = 15
+    static let providerNameSize: CGFloat = 14
+    static let zoneNameSize: CGFloat = 20
+    static let zoneDetailSize: CGFloat = 15
+    static let connectionLabelSize: CGFloat = 15
+    /// Offset of the first caption line below a node's center, and the spacing
+    /// between caption lines.
+    static let captionLead: CGFloat = 15
+    static let captionLine: CGFloat = 18
+
     // Natural-size compute layout metrics (content coordinates)
     static let outerPad: CGFloat = 24
     static let zoneGap: CGFloat = 64
     static let nodeGap: CGFloat = 16
-    static let zoneInset = EdgeInsets(top: 42, leading: 14, bottom: 14, trailing: 14)
-    static let minZoneSize = CGSize(width: 220, height: 150)
+    static let zoneInset = EdgeInsets(top: 60, leading: 14, bottom: 14, trailing: 14)
+    static let minZoneSize = CGSize(width: 260, height: 170)
     /// Room reserved per service provider (circle plus its name) when sizing a
     /// zone; providers float into the slack left around the node grid.
-    static let providerCell: CGFloat = 64
+    static let providerCell: CGFloat = 96
     /// How far scale-to-fit may magnify a diagram smaller than the canvas.
     static let maxFitScale: CGFloat = 1.6
     static let maxZoom: CGFloat = 8
@@ -352,7 +365,8 @@ extension DesignCanvasView {
                     let plan = layout.plans[ObjectIdentifier(node.zone)]
                     pos = providerSeed(node: node, placement: p, index: index, total: totals[key] ?? 1,
                                        clusterCenter: hostOfVM[key].flatMap { placements[ObjectIdentifier($0)]?.center },
-                                       ringRadius: plan?.ringRadius[key])
+                                       ringRadius: plan?.ringRadius[key],
+                                       badge: providerBadge(sp))
                 } else {
                     let centers = placed.compactMap { placements[ObjectIdentifier($0)]?.center }
                     pos = centers.reduce(.zero, +) * (1 / CGFloat(centers.count))
@@ -371,16 +385,23 @@ extension DesignCanvasView {
         var circles: [LayoutCircle] = []
         for node in design.allComputeNodes {
             if let p = placements[ObjectIdentifier(node)] {
+                // Collide on the caption block, not just the disc, so nothing
+                // settles on top of a node's name and spec lines.
+                let f = footprint(of: node)
                 circles.append(LayoutCircle(id: ObjectIdentifier(node), center: p.center, radius: p.radius,
-                                            layoutRadius: p.radius + 10,
+                                            layoutRadius: max(p.radius, min(f.width, f.height)) + 6,
                                             anchor: p.center, anchorStrength: 0.2, bounds: p.bounds))
             }
         }
         for sp in design.serviceProviders {
             if let seed = providerInit[ObjectIdentifier(sp)] {
+                // Collide on the name badge under the circle too, so provider
+                // captions don't end up printed on top of each other.
+                let badge = providerBadge(sp)
                 circles.append(LayoutCircle(id: ObjectIdentifier(sp), center: seed.position,
                                             radius: CanvasStyle.providerRadius,
-                                            layoutRadius: CanvasStyle.providerRadius + 14,
+                                            layoutRadius: max(CanvasStyle.providerRadius + 8,
+                                                              min(badge.width, badge.height)),
                                             anchor: seed.position, anchorStrength: 0, bounds: seed.bounds))
             }
         }
@@ -429,8 +450,9 @@ extension DesignCanvasView {
                     if let icon = ctx.resolveSymbol(id: sp.service.serviceType) {
                         ctx.draw(icon, at: pos)
                     }
-                    drawText(sp.name, at: CGPoint(x: pos.x, y: pos.y + CanvasStyle.providerRadius + 3),
-                             size: 8, weight: .semibold, color: .primary, anchor: .top, into: &ctx)
+                    drawText(sp.name, at: CGPoint(x: pos.x, y: pos.y + CanvasStyle.providerRadius + 4),
+                             size: CanvasStyle.providerNameSize, weight: .semibold, color: .primary,
+                             anchor: .top, into: &ctx)
                 }
             }
         }
@@ -537,17 +559,15 @@ extension DesignCanvasView {
                 halfH = max(halfH, ring + vm.height)
             }
 
-            // Providers settle around the cluster they run on, so each cell has
-            // to be wide enough for a band of them outside the cluster — enough
-            // circumference for every provider attached to this host or its VMs.
+            // Providers settle around the cluster they run on, so add a band
+            // outside it for them — per axis, so a wide caption doesn't force a
+            // tall cell too — and check the ring is long enough to hold them all.
             let providers = providerCount(for: unit, in: design)
             if providers > 0 {
-                let cell = CanvasStyle.providerCell
-                let band = max(halfW, halfH) + cell * 0.75
-                let circumference = CGFloat(providers) * cell / (2 * .pi)
-                let reach = max(band, circumference)
-                halfW = max(halfW, reach)
-                halfH = max(halfH, reach)
+                let band = CanvasStyle.providerCell * 0.75
+                let minRing = CGFloat(providers) * CanvasStyle.providerCell / (2 * .pi)
+                halfW = max(halfW + band, minRing)
+                halfH = max(halfH + band, minRing)
             }
 
             plan.cellW = max(plan.cellW, 2 * halfW + gap)
@@ -567,20 +587,34 @@ extension DesignCanvasView {
     /// direction leading away from the cluster, with siblings fanned to either
     /// side. `clusterCenter` is the host center when the node is a VM.
     fileprivate func providerSeed(node: ComputeNode, placement: NodePlacement, index: Int, total: Int,
-                                  clusterCenter: CGPoint?, ringRadius: CGFloat?) -> CGPoint {
-        let radius: CGFloat
-        if let ring = ringRadius {
-            radius = ring + CanvasStyle.vmRadius + CanvasStyle.providerRadius + 10
-        } else {
-            radius = placement.radius + CanvasStyle.providerRadius + 16
-        }
+                                  clusterCenter: CGPoint?, ringRadius: CGFloat?, badge: CGSize) -> CGPoint {
+        let clearance = CanvasStyle.providerRadius + CanvasStyle.providerNameSize + 10
+        let caption = footprint(of: node)
+        let inner = ringRadius.map { $0 + CanvasStyle.vmRadius } ?? placement.radius
+
         // Point away from the host for a VM; straight up for anything else.
         var outward = clusterCenter.map { (placement.center - $0).normalized() } ?? .zero
         if outward == .zero { outward = CGPoint(x: 0, y: -1) }
 
-        let step = min(2 * .pi / CGFloat(max(total, 1)), CanvasStyle.providerCell / radius)
+        // Fan the siblings out, then push each one clear of the node's caption
+        // block in its own direction, allowing for the width of its own name
+        // badge. Captions are far wider than they are tall, so a provider off to
+        // the side ends up much further out than one directly above.
+        let step = min(2 * .pi / CGFloat(max(total, 1)),
+                       CanvasStyle.providerCell * 1.5 / max(inner + clearance, 1))
         let angle = atan2(outward.y, outward.x) + step * (CGFloat(index) - CGFloat(total - 1) / 2)
+        let dx = abs(cos(angle)), dy = abs(sin(angle))
+        let keepOut = min(dx > 0.0001 ? (caption.width + badge.width) / dx : .greatestFiniteMagnitude,
+                          dy > 0.0001 ? (caption.height + badge.height) / dy : .greatestFiniteMagnitude)
+        let radius = max(inner + clearance, keepOut)
         return placement.center + CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
+    }
+
+    /// Half-extents of a provider's circle plus the name printed below it.
+    fileprivate func providerBadge(_ sp: ServiceProvider) -> CGSize {
+        CGSize(width: max(CanvasStyle.providerRadius,
+                          textWidth(sp.name, size: CanvasStyle.providerNameSize) / 2) + 6,
+               height: CanvasStyle.providerRadius + CanvasStyle.providerNameSize + 6)
     }
 
     /// Providers that draw a link to this host, its VMs, or this client.
@@ -596,15 +630,16 @@ extension DesignCanvasView {
     /// decide how much room a node needs.
     fileprivate func footprint(of node: ComputeNode) -> CGSize {
         let radius = node.type == .vm ? CanvasStyle.vmRadius : CanvasStyle.hostRadius
-        var widest = textWidth(node.name, size: 10)
+        var widest = textWidth(node.name, size: CanvasStyle.nodeNameSize)
         if node.type != .vm {
-            widest = max(widest, textWidth(node.hwDef.processor, size: 9))
+            widest = max(widest, textWidth(node.hwDef.processor, size: CanvasStyle.nodeSpecSize))
         }
-        widest = max(widest, textWidth("\(node.displayCpuCount) CPU · \(node.memoryGB) GB", size: 9))
-        // Spec lines stack downward from 12pt below the center, 12pt apart.
+        widest = max(widest, textWidth("\(node.displayCpuCount) CPU · \(node.memoryGB) GB",
+                                       size: CanvasStyle.nodeSpecSize))
         let captionLines = node.type == .vm ? 1 : 2
         return CGSize(width: max(radius, widest / 2),
-                      height: max(radius, 12 + CGFloat(captionLines) * 12))
+                      height: max(radius, CanvasStyle.captionLead
+                                          + CGFloat(captionLines) * CanvasStyle.captionLine))
     }
 
     /// Approximate width of a drawn string. Canvas text can only be measured
@@ -619,12 +654,12 @@ extension DesignCanvasView {
         let path = Path(roundedRect: rect, cornerRadius: 24)
         ctx.fill(path, with: .color(CanvasStyle.zoneFill))
         ctx.stroke(path, with: .color(CanvasStyle.zoneStroke), lineWidth: 1.5)
-        drawText(zone.name, at: CGPoint(x: rect.minX + 18, y: rect.minY + 7),
-                 size: 12, weight: .semibold, color: .primary, anchor: .topLeading, into: &ctx)
+        drawText(zone.name, at: CGPoint(x: rect.minX + 18, y: rect.minY + 9),
+                 size: CanvasStyle.zoneNameSize, weight: .semibold, color: .primary, anchor: .topLeading, into: &ctx)
         if let local = zone.localConnection(in: network) {
             drawText("local \(local.bandwidthMbps)/\(local.latencyMs)",
-                     at: CGPoint(x: rect.minX + 18, y: rect.minY + 24),
-                     size: 9, color: .secondary, anchor: .topLeading, into: &ctx)
+                     at: CGPoint(x: rect.minX + 18, y: rect.minY + 34),
+                     size: CanvasStyle.zoneDetailSize, color: .secondary, anchor: .topLeading, into: &ctx)
         }
     }
 
@@ -732,19 +767,19 @@ extension DesignCanvasView {
         // small circles.
         drawNodeCircle(center, radius: radius, fill: fillColor(for: node.type), stroke: .white,
                        label: "", labelColor: .clear, into: &ctx)
-        drawText(node.name, at: CGPoint(x: center.x, y: center.y - 4),
-				 size: 10, weight: .bold, color: .primary, anchor: .center, into: &ctx)
+        drawText(node.name, at: CGPoint(x: center.x, y: center.y - 8),
+				 size: CanvasStyle.nodeNameSize, weight: .bold, color: .primary, anchor: .center, into: &ctx)
 
-        var y = center.y + 12
+        var y = center.y + CanvasStyle.captionLead
 		if node.type != .vm {
 			let spec = node.hwDef.processor
 			drawText(spec, at: CGPoint(x: center.x, y: y),
-					 size: 9, weight: .semibold, color: .primary, anchor: .center, into: &ctx)
-			y += 12
+					 size: CanvasStyle.nodeSpecSize, weight: .semibold, color: .primary, anchor: .center, into: &ctx)
+			y += CanvasStyle.captionLine
 		}
         let spec = "\(node.displayCpuCount) CPU · \(node.memoryGB) GB"
         drawText(spec, at: CGPoint(x: center.x, y: y),
-				 size: 9, weight: .semibold, color: .primary, anchor: .center, into: &ctx)
+				 size: CanvasStyle.nodeSpecSize, weight: .semibold, color: .primary, anchor: .center, into: &ctx)
     }
 
     fileprivate func fillColor(for type: ComputeNodeType) -> Color {
@@ -993,10 +1028,12 @@ extension DesignCanvasView {
         ctx.fill(path, with: .color(color))
     }
 
-    fileprivate func drawPill(_ s: String, at center: CGPoint, into ctx: inout GraphicsContext) {
-        let resolved = ctx.resolve(Text(s).font(.system(size: 9)))
-        let sz = resolved.measure(in: CGSize(width: 200, height: 40))
-        let pad: CGFloat = 5
+    fileprivate func drawPill(_ s: String, at center: CGPoint,
+                              size: CGFloat = CanvasStyle.connectionLabelSize,
+                              into ctx: inout GraphicsContext) {
+        let resolved = ctx.resolve(Text(s).font(.system(size: size)))
+        let sz = resolved.measure(in: CGSize(width: 300, height: 60))
+        let pad: CGFloat = 6
         let rect = CGRect(x: center.x - sz.width / 2 - pad, y: center.y - sz.height / 2 - pad,
                           width: sz.width + pad * 2, height: sz.height + pad * 2)
         let path = Path(roundedRect: rect, cornerRadius: 5)
@@ -1182,9 +1219,11 @@ private func busyContainer() -> ModelContainer {
             let sp = ServiceProvider(name: "AGOL \(type.capitalized)", desc: "",
                                      service: ServiceDef(name: type.capitalized, desc: "",
                                                          serviceType: type, balancingModel: .single))
-            sp.addNode(host)
             ctx.insert(sp)
+            try? ctx.save()
+            sp.addNode(host)
             design.addServiceProvider(sp)
+            try? ctx.save()
         }
     }
     try? ctx.save()

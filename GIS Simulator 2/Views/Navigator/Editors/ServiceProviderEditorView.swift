@@ -126,8 +126,10 @@ struct ServiceProviderEditorView: View {
         if let sp = editing {
             sp.name = trimmed
             sp.desc = desc
+            sp.service = service
             sp.nodes = nodes
             sp.tags = tags
+            try? modelContext.save()
         } else {
             let sp = ServiceProvider(name: trimmed, desc: desc, service: service, nodes: nodes, tags: tags)
             modelContext.insert(sp)
